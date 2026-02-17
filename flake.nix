@@ -50,7 +50,7 @@
 						pkgs.mkShell {
 							inherit buildInputs;
 				    			LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath buildInputs}";
-				    			RUST_LOG = "info";
+				    			RUST_LOG = "warn";
 				    			shellHook = "echo Success";
 			    			};
     			});

@@ -1,8 +1,11 @@
+use std::sync::{Arc, Mutex};
+
+use tapestry::font::{Font, font_renderer::TextBox};
 use winit::dpi::PhysicalSize;
 
 use crate::renderer::ElementRectangle;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum Direction {
 	Vertical,
 	Horizontal,
@@ -180,7 +183,8 @@ pub struct Element<UserMessage> {
 	size: Dimensions<Size>,
 	colour: Colour,
 	children: Vec<Element<UserMessage>>,
-	text: Option<String>,
+	// text: Option<Arc<Mutex<String>>>,
+	text: Option<TextBox>,
 	on_click: Option<UserMessage>,
 	child_gaps: u64,
 	indentation: (u64, u64, u64, u64),
@@ -215,7 +219,7 @@ impl<UserMessage> Element<UserMessage> {
 		}
 	}
 
-	pub fn text(mut self, text: String) -> Self {
+	pub fn text(mut self, text: TextBox) -> Self {
 		self.text = Some(text);
 		self
 	}
@@ -249,7 +253,7 @@ impl<UserMessage> Element<UserMessage> {
 		match &self.text {
 			Some(text) => {
 				self.text_minimum = Some(20); // TWENTY IS THE PREDEND WIDTH OF A CHARACTER NOT SOME SPECIAL VALUE.
-				self.text_ideal = Some(text.chars().count() as u64 * 20); // TWENTY IS THE PREDEND WIDTH OF A CHARACTER NOT SOME SPECIAL VALUE.
+				self.text_ideal = Some(text.get_ideal_width() as u64 + self.indentation.1 + self.indentation.3);
 			},
 			None => {
 				self.text_minimum = None;
@@ -262,8 +266,37 @@ impl<UserMessage> Element<UserMessage> {
 		}
 	}
 
+	pub fn collect_text_boxes(&self, screen_size: Dimensions<u32>) -> Vec<TextBox> {
+		let mut text_boxes: Vec<TextBox> = Vec::new();
+
+		match &self.text {
+			Some(text) => {
+				let text_box = TextBox {
+					font: Arc::clone(&text.font),
+					text: Arc::clone(&text.text),
+					pixels_per_em: text.pixels_per_em,
+					position: ((self.position.x.unwrap() + self.indentation.3) as f32, ((screen_size.height as u64 - self.position.y.unwrap() - self.assigned_size.height.unwrap() + self.indentation.2) as f32 + text.font.typographic_descender.to_pixels(text.get_pixels_per_font_unit()).value ) as f32).into(),
+				};
+				text_boxes.push(text_box);
+			},
+			None => {},
+		}
+
+		for child in self.children.iter() {
+			text_boxes.append(&mut child.collect_text_boxes(screen_size));
+		}
+
+		text_boxes
+	}
+
 	fn calculate_text_height(&self) -> u64 {
-		self.text_ideal.unwrap().div_ceil(self.assigned_size.get(Dimension::Width).unwrap()) * 20 // TWENTY IS THE PREDENT WIDTH OF A CHARACTER NOT SOME SPECIAL VALUE.
+		match &self.text {
+			Some(text) => {
+				text.get_height() as u64 + self.indentation.0 + self.indentation.2
+			},
+			None => 0,
+		}
+		// self.text_ideal.unwrap().div_ceil(self.assigned_size.get(Dimension::Width).unwrap()) * 20 // TWENTY IS THE PREDENT WIDTH OF A CHARACTER NOT SOME SPECIAL VALUE.
 	}
 
 	fn get_minimum_size(&self, dimension: Dimension) -> u64 {
@@ -406,16 +439,18 @@ impl<UserMessage> Element<UserMessage> {
 				};
 
 				let available_growth = self.assigned_size.get(dimension).unwrap() - self.calculated_fit_size.get(dimension).unwrap();
-				let available_growth_per_child=  available_growth / children_to_grow.len() as u64;
-				let ammount_children_can_be_grown = second_smallest - smallest;
-				let ammount_to_grow_children_by = if available_growth_per_child < ammount_children_can_be_grown { available_growth_per_child } else { ammount_children_can_be_grown };
-
-				if available_growth_per_child == 0 {
+				
+				if available_growth < children_to_grow.len() as u64 {
 					let number_of_excess_children = children_to_grow.len() as u64 - available_growth;
 					for _ in 0..number_of_excess_children {
 						let _ = children_to_grow.pop();
 					};
 				}; // VERY SKETCHY MIGHT NOT WORK.
+
+				let available_growth_per_child=  available_growth / children_to_grow.len() as u64; // DID NOT WORK SHOULD FIX IT
+
+				let ammount_children_can_be_grown = second_smallest - smallest;
+				let ammount_to_grow_children_by = if available_growth_per_child < ammount_children_can_be_grown { available_growth_per_child } else { ammount_children_can_be_grown };
 
 				for child_to_grow in children_to_grow.iter_mut() {
 					child_to_grow.assigned_size.set(dimension, Some(child_to_grow.assigned_size.get(dimension).unwrap() + ammount_to_grow_children_by));

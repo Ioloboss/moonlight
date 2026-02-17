@@ -4,6 +4,7 @@ use crate::element::{Colour, Dimensions, Element, Position};
 use crate::internal_loop::{InternalMessage};
 use crate::window::Window;
 
+use tapestry::font::font_renderer::FontRenderer;
 use wgpu::{rwh::{HasDisplayHandle, HasWindowHandle}, util::{DeviceExt, RenderEncoder}, SurfaceTarget};
 
 use winit::platform::wayland::EventLoopBuilderExtWayland;
@@ -60,9 +61,9 @@ pub struct ElementRectangle {
 impl ElementRectangle {
 	fn to_raw(&self, screen_size: Dimensions<u32>) -> ElementRectangleRaw {
 		let normalised_x: f32 = (self.position.x.unwrap() as f32 / (screen_size.width as f32 / 2.0)) - 1.0;
-		let normalised_y: f32 = -(self.position.y.unwrap() as f32 / (screen_size.height as f32 / 2.0 )) + 1.0;
+		let normalised_y: f32 = ((screen_size.height as u64 - self.position.y.unwrap() - self.size.height) as f32 / (screen_size.height as f32 / 2.0 )) - 1.0;
 		let normalised_width: f32 = (self.size.width as f32 / screen_size.width as f32) * 2.0;
-		let normalised_height: f32 = -(self.size.height as f32 / screen_size.height as f32) * 2.0;
+		let normalised_height: f32 = (self.size.height as f32 / screen_size.height as f32) * 2.0;
 		ElementRectangleRaw { position: [normalised_x, normalised_y],
 			size: [normalised_width, normalised_height],
 			colour: [self.colour.r, self.colour.g, self.colour.b],
@@ -106,19 +107,19 @@ impl ElementRectangleRaw {
 }
 
 const ELEMENT_RECTANGLE_VERTICES: &[Vertex] = &[
-	Vertex { position: [1.0, 0.0] },
+	Vertex { position: [0.0, 1.0] },
 	Vertex { position: [0.0, 0.0] },
 	Vertex { position: [1.0, 1.0] },
-	Vertex { position: [0.0, 1.0] },
+	Vertex { position: [1.0, 0.0] },
 ];
 
 const ELEMENT_RECTANGLE_INDICES: &[u16] = &[
-	0, 1, 2, 3, // WILL BE FLIPPED WHEN NORMALISING POSITION
+	0, 1, 2, 3,
 ];
 
 pub struct RendererState {
 	surface: wgpu::Surface<'static>,
-	device: wgpu::Device,
+	device: Arc<wgpu::Device>,
 	queue: wgpu::Queue,
 	config: wgpu::SurfaceConfiguration,
 	is_surface_configured: bool,
@@ -129,7 +130,7 @@ pub struct RendererState {
 	number_of_elements: u32,
 	element_rectangle_buffer: wgpu::Buffer,
 	pub window: Arc<Window>,
-
+	pub font_renderer: FontRenderer,
 }
 
 impl RendererState {
@@ -164,8 +165,11 @@ impl RendererState {
 				required_limits: wgpu::Limits::defaults(),
 				memory_hints: Default::default(),
 				trace: wgpu::Trace::Off,
+				experimental_features: wgpu::ExperimentalFeatures::disabled(),
 			})
 			.await?;
+
+		let device = Arc::new(device);
 
 		let surface_capabilities = surface.get_capabilities(&adapter);
 
@@ -185,8 +189,11 @@ impl RendererState {
 			desired_maximum_frame_latency: 2,
 		};
 
+
+		let mut font_renderer = pollster::block_on(FontRenderer::new(Arc::clone(&(window.internal)), Arc::clone(&device), &config)).unwrap(); // NEED TO FIX THIS
+
 		let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-			label: Some("Shader"),
+			label: Some("Moonlight Shader"),
 			source: wgpu::ShaderSource::Wgsl(include_str!("../resources/shaders/element_rectangle.wgsl").into()),
 		});
 
@@ -271,6 +278,7 @@ impl RendererState {
 			number_of_elements,
 			element_rectangle_buffer,
 			window,
+			font_renderer,
 		})
 	}
 
@@ -295,13 +303,19 @@ impl RendererState {
 	}
 
 	pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+		
 		if !self.is_surface_configured {
 			return  Ok(());
 		}
 
 		let output = self.surface.get_current_texture()?;
 
-		let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+		let view = output.texture.create_view(&wgpu::TextureViewDescriptor {
+			label: Some("Moonlight TextureView"),
+			..Default::default()
+		});
+
+		// println!("\nMoonlight TextureView: {view:?}");
 
 		let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
 			label: Some("Render Encoder"),
@@ -319,7 +333,7 @@ impl RendererState {
 								wgpu::Color {
 									r: 0.0,
 									g: 0.0,
-									b: 0.0,
+									b: 1.0,
 									a: 1.0,
 								}
 							),
@@ -341,6 +355,9 @@ impl RendererState {
 		}
 
 		self.queue.submit(std::iter::once(encoder.finish()));
+
+		self.font_renderer.draw_text(&self.queue, &view);
+
 		self.window.pre_present_notify();
 		output.present();
 

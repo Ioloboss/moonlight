@@ -11,7 +11,7 @@ use winit::{
 };
 
 pub struct Window {
-	internal: winit::window::Window,
+	pub internal: Arc<winit::window::Window>,
 	event_loop_proxy: EventLoopProxy<MessageFromMainThread>,
 }
 
@@ -65,7 +65,7 @@ impl ApplicationHandler<MessageFromMainThread> for App {
 			.with_title("Moonlight Test"); // CHANGE TO RECIEVED FROM APPLICATION
 
 		let window = Arc::new(Window{ 
-			internal: event_loop.create_window(window_attributes).unwrap(),
+			internal: Arc::new(event_loop.create_window(window_attributes).unwrap()),
 			event_loop_proxy: { self.event_loop_proxy.clone() },
 		});
 		self.transmitter.send(InternalMessage::Window(window)).unwrap();
@@ -84,17 +84,11 @@ impl ApplicationHandler<MessageFromMainThread> for App {
 				self.transmitter.send(InternalMessage::Resized(size.into())).unwrap(); // HANDLE THIS PROPERLY
 			},
 			WindowEvent::RedrawRequested => {
-				self.transmitter.send(InternalMessage::RedrawRequested).unwrap() // HANDLE THIS PROPERLY
+				self.transmitter.send(InternalMessage::RedrawRequested).unwrap(); // HANDLE THIS PROPERLY
 			},
-			WindowEvent::KeyboardInput {
-				event:
-					KeyEvent {
-						physical_key: PhysicalKey::Code(KeyCode::Escape),
-						state: ElementState::Pressed,
-						..
-					},
-				..
-			} => self.transmitter.send(InternalMessage::Close).unwrap(),
+			WindowEvent::KeyboardInput { event, .. } => {
+				self.transmitter.send(InternalMessage::KeyPressed(event)).unwrap(); // HANDLE THIS PROPERLY
+			},
 			_ => {},
 		}
 	}

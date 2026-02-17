@@ -4,9 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-wgpu = "26"
+wgpu = "27.0.1"
 winit = "0.30"
 env_logger = "0.10"
 log = "0.4"
 pollster = "0.4"
-bytemuck = { version = "1.16", features = [ "derive" ] }
+bytemuck = { version = "1.24", features = [ "derive" ] }
+tapestry = { git = "https://github.com/ioloboss/tapestry" }
+#tapestry = { path = "../tapestry" }
