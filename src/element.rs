@@ -276,6 +276,7 @@ impl<UserMessage> Element<UserMessage> {
 					text: Arc::clone(&text.text),
 					pixels_per_em: text.pixels_per_em,
 					position: ((self.position.x.unwrap() + self.indentation.3) as f32, ((screen_size.height as u64 - self.position.y.unwrap() - self.assigned_size.height.unwrap() + self.indentation.2) as f32 + text.font.typographic_descender.to_pixels(text.get_pixels_per_font_unit()).value ) as f32).into(),
+					colour: text.colour,
 				};
 				text_boxes.push(text_box);
 			},
