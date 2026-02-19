@@ -7,7 +7,7 @@ use tapestry::font::Font;
 use winit::event::{ElementState, KeyEvent};
 use winit::keyboard::{Key, NamedKey, SmolStr};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum UserMessageTest {
 	Test,
 	KeyPressed(Key<SmolStr>),
@@ -30,7 +30,7 @@ fn assemble(user_state: &UserStateTest) -> Element<UserMessageTest> {
 	Element::new(Direction::Horizontal, Size::Grow { minimum: None, maximum: None }, Size::Grow { minimum: None, maximum: None }, Colour::red(), vec!(
 		Element::new(Direction::Vertical, Size::Fit { minimum: None, maximum: None }, Size::Grow { minimum: None, maximum: None }, Colour::green(), vec!(
 			Element::new(Direction::Horizontal, Size::Grow { minimum: None, maximum: None }, Size::Fixed(50), Colour::blue(), Vec::new()),
-			Element::new(Direction::Horizontal, Size::Grow { minimum: None, maximum: None }, Size::Fixed(50), Colour::blue(), Vec::new()),
+			Element::new(Direction::Horizontal, Size::Grow { minimum: None, maximum: None }, Size::Fixed(50), Colour::blue(), Vec::new()).on_click(UserMessageTest::Test),
 			Element::new(Direction::Horizontal, Size::FitText { minimum: None, maximum: None }, Size::FitText { minimum: None, maximum: None }, Colour::blue(), Vec::new()).text(tapestry::font::font_renderer::TextBox { font: Arc::clone(&user_state.font), text: Arc::clone(&user_state.text), pixels_per_em: 50.0.into(), position: (0.0, 0.0).into(), colour: [0.0, 0.0, 0.0] })
 		)).child_gaps(5),
 		Element::new(Direction::Vertical, Size::Grow { minimum: None, maximum: None }, Size::Grow { minimum: None, maximum: None }, Colour::green(), vec!(
@@ -46,7 +46,9 @@ fn assemble(user_state: &UserStateTest) -> Element<UserMessageTest> {
 
 fn update(user_state: &mut UserStateTest, user_message: UserMessageTest) -> UpdateResponse {
 	match user_message {
-		UserMessageTest::Test => {},
+		UserMessageTest::Test => {
+			println!("Tested");
+		},
 		UserMessageTest::KeyPressed(key) => {
 			match key {
 				Key::Named(NamedKey::Escape) => {

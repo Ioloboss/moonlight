@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use tapestry::font::{Font, font_renderer::TextBox};
+use tapestry::font::{Font, Pixels, font_renderer::TextBox};
 use winit::dpi::PhysicalSize;
 
 use crate::renderer::ElementRectangle;
@@ -198,7 +198,7 @@ pub struct Element<UserMessage> {
 	text_ideal: Option<u64>,
 }
 
-impl<UserMessage> Element<UserMessage> {
+impl<UserMessage: Clone> Element<UserMessage> {
 	pub fn new(direction: Direction, width: Size, height: Size, colour: Colour, children: Vec<Element<UserMessage>>) -> Self {
 		Element {
 			direction,
@@ -652,6 +652,28 @@ impl<UserMessage> Element<UserMessage> {
 		for child in self.children.iter() {
 			child.to_rectangles(element_rectangles);
 		}
+	}
+
+	pub fn get_on_click(&self, x: Pixels<f64>, y: Pixels<f64>) -> Option<UserMessage> {
+		let mut on_click: Option<UserMessage> = None;
+		if let Some(on_click_self) = &self.on_click {
+			on_click = Some(on_click_self.clone());
+		}
+
+		for child in self.children.iter() {
+			let x_difference = x.value - child.position.x.unwrap() as f64;
+			let y_difference = y.value - child.position.y.unwrap() as f64;
+
+			if (0.0 <= x_difference) && (x_difference <= child.assigned_size.width.unwrap() as f64) {
+				if (0.0 <= y_difference) && (y_difference <= child.assigned_size.height.unwrap() as f64) {
+					if let Some(on_click_child) = child.get_on_click(x, y) {
+						on_click = Some(on_click_child);
+					}
+				}
+			}
+		}
+
+		on_click
 	}
 }
 

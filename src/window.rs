@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex, mpsc};
 
 use crate::element::{Colour, Dimensions, Element, Position};
 use crate::internal_loop::{InternalMessage};
+use tapestry::font::Pixels;
 use winit::event_loop::EventLoopProxy;
 
 use wgpu::rwh::{HasDisplayHandle, HasWindowHandle};
@@ -48,6 +49,7 @@ pub enum MessageFromMainThread {
 pub struct App {
 	transmitter: mpsc::Sender<InternalMessage>,
 	event_loop_proxy: EventLoopProxy<MessageFromMainThread>,
+	mouse_position: (Pixels<f64>, Pixels<f64>),
 }
 
 impl App {
@@ -55,6 +57,7 @@ impl App {
 		Self {
 			transmitter,
 			event_loop_proxy,
+			mouse_position: (0.0.into(), 0.0.into()),
 		}
 	}
 }
@@ -89,6 +92,12 @@ impl ApplicationHandler<MessageFromMainThread> for App {
 			WindowEvent::KeyboardInput { event, .. } => {
 				self.transmitter.send(InternalMessage::KeyPressed(event)).unwrap(); // HANDLE THIS PROPERLY
 			},
+			WindowEvent::MouseInput { device_id, state, button } => {
+				self.transmitter.send(InternalMessage::MouseEvent(state, button, self.mouse_position)).unwrap(); // HANDLE THIS PROPERLY
+			}
+			WindowEvent::CursorMoved { device_id, position } => {
+				self.mouse_position = (position.x.into(), position.y.into())
+			}
 			_ => {},
 		}
 	}

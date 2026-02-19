@@ -1,6 +1,6 @@
-use tapestry::font::Font;
+use tapestry::font::{Font, Pixels};
 use tapestry::font::font_renderer::{FontRenderer, TextBox};
-use winit::event::{KeyEvent};
+use winit::event::{ElementState, KeyEvent, MouseButton};
 use winit::event_loop::EventLoopProxy;
 use winit::keyboard::{Key, SmolStr};
 
@@ -19,6 +19,7 @@ pub enum InternalMessage {
 	RedrawRequested,
 	Close,
 	KeyPressed(KeyEvent),
+	MouseEvent(ElementState, MouseButton, (Pixels<f64>, Pixels<f64>)),
 }
 
 trait Update<UserState, UserMessage> {
@@ -90,7 +91,7 @@ pub enum UpdateResponse {
 
 pub struct MoonlightApplication<UserState, UserMessage, Assemble, Update>
 where
-	UserMessage: Debug,
+	UserMessage: Debug + Clone,
 	Assemble: AssembleFn<UserState, UserMessage>,
 	Update: UpdateFn<UserState, UserMessage>,
 {
@@ -101,9 +102,10 @@ where
 	update: Update,
 	keyboard_input: Box<dyn KeyboardInputFn<UserMessage>>,
 	what: PhantomData<UserMessage>, // REMOVE THIS IF POSSIBLE
+	root: Option<Element<UserMessage>>, // MAYBE CHANGE THIS?
 }
 
-impl<UserState, UserMessage: Debug, Assemble: AssembleFn<UserState, UserMessage>, Update: UpdateFn<UserState, UserMessage>> MoonlightApplication<UserState, UserMessage, Assemble, Update> {
+impl<UserState, UserMessage: Debug + Clone, Assemble: AssembleFn<UserState, UserMessage>, Update: UpdateFn<UserState, UserMessage>> MoonlightApplication<UserState, UserMessage, Assemble, Update> {
 	pub fn new(user_state: UserState, assemble: Assemble, update: Update) -> Self {
 		env_logger::init();
 		let (transmitter, reciever) = mpsc::channel::<InternalMessage>();
@@ -130,6 +132,7 @@ impl<UserState, UserMessage: Debug, Assemble: AssembleFn<UserState, UserMessage>
 			update,
 			keyboard_input: Box::new(NoKeyboardInput),
 			what: PhantomData,
+			root: None,
 		}
 	}
 
@@ -157,6 +160,7 @@ impl<UserState, UserMessage: Debug, Assemble: AssembleFn<UserState, UserMessage>
 		self.renderer_state.update_element_rectangles_buffer(element_rectangles);
 
 		self.renderer_state.font_renderer.update();
+		self.root = Some(root);
 
 		Ok(())
 	}
@@ -217,6 +221,35 @@ impl<UserState, UserMessage: Debug, Assemble: AssembleFn<UserState, UserMessage>
 							None => {},
 						}
 					}
+					InternalMessage::MouseEvent(state, button, mouse_position) => {
+						match (button, state) {
+							(MouseButton::Left, ElementState::Pressed) => {
+								let user_message = match &self.root {
+									Some(root_element) => root_element.get_on_click(mouse_position.0, mouse_position.1),
+									None => None,
+								};
+								if let Some(user_message) = user_message {
+									let response = self.update.update(&mut self.user_state, user_message);
+									match response {
+										UpdateResponse::Nothing => {},
+										UpdateResponse::Recalculate => {
+											self.recalculate().unwrap();
+											self.renderer_state.render().unwrap();
+										},
+										UpdateResponse::Render => {
+											self.renderer_state.render().unwrap();
+											todo!("THIS IS NOT CURRENTLY SUPPORTED");
+										},
+										UpdateResponse::Close => {
+											self.close();
+											break;
+										}
+									}
+								}
+							},
+							_ => {},
+						}
+					},
 					_ => todo!("MoonlightApplication::Run reached InternalMessage not implemented yet.")
 				},
 				Err(e) => panic!("Error when running MoonlightApplication: {e}"),
