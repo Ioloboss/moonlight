@@ -1,9 +1,11 @@
 use std::sync::{Arc, Mutex, mpsc};
 
-use crate::element::{Colour, Dimensions, Element, Position};
+use crate::element::Element;
 use crate::internal_loop::{InternalMessage};
 use crate::window::Window;
 
+use mircalla_types::units::Pixels;
+use mircalla_types::vectors::{Colour, Position, Size};
 use tapestry::font::font_renderer::FontRenderer;
 use wgpu::{rwh::{HasDisplayHandle, HasWindowHandle}, util::{DeviceExt, RenderEncoder}, SurfaceTarget};
 
@@ -53,20 +55,20 @@ impl Vertex {
 }
 
 pub struct ElementRectangle {
-	pub position: Position,
-	pub size: Dimensions<u64>,
+	pub position: Position<Pixels<f32>>,
+	pub size: Size<Pixels<f32>>,
 	pub colour: Colour,
 }
 
 impl ElementRectangle {
-	fn to_raw(&self, screen_size: Dimensions<u32>) -> ElementRectangleRaw {
-		let normalised_x: f32 = (self.position.x.unwrap() as f32 / (screen_size.width as f32 / 2.0)) - 1.0;
-		let normalised_y: f32 = ((screen_size.height as u64 - self.position.y.unwrap() - self.size.height) as f32 / (screen_size.height as f32 / 2.0 )) - 1.0;
-		let normalised_width: f32 = (self.size.width as f32 / screen_size.width as f32) * 2.0;
-		let normalised_height: f32 = (self.size.height as f32 / screen_size.height as f32) * 2.0;
-		ElementRectangleRaw { position: [normalised_x, normalised_y],
-			size: [normalised_width, normalised_height],
-			colour: [self.colour.r, self.colour.g, self.colour.b],
+	fn to_raw(&self, screen_size: Size<Pixels<f32>>) -> ElementRectangleRaw {
+		let normalised_x = self.position.x.to_screen_space(screen_size.width);
+		let normalised_y = (screen_size.height - self.position.y - self.size.height).to_screen_space(screen_size.height);
+		let normalised_width = self.size.width.to_screen_space_length(screen_size.width);
+		let normalised_height = self.size.height.to_screen_space_length(screen_size.height);
+		ElementRectangleRaw { position: [normalised_x.value, normalised_y.value],
+			size: [normalised_width.value, normalised_height.value],
+			colour: self.colour.into(),
 		}
 	}
 }
@@ -137,10 +139,10 @@ impl RendererState {
 	pub async fn new(window: Arc<Window>) -> Result<Self, NewRendererStateError> {
 		log::info!("New RenderState constructed");
 
-		let size: Dimensions<u32> = window.inner_size();
+		let size: Size<Pixels<f32>> = window.inner_size();
 
 		let element_rectangles = vec![
-			ElementRectangle { position: Position { x: Some(0), y: Some(0) }, size: Dimensions { width: size.width as u64, height: size.height as u64 }, colour: Colour::black()}
+			ElementRectangle { position: Position { x: 0.0.into(), y: 0.0.into() }, size, colour: Colour::black()}
 		];
 
 		let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
@@ -181,8 +183,8 @@ impl RendererState {
 		let config = wgpu::SurfaceConfiguration {
 			usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
 			format: surface_format,
-			width: size.width,
-			height: size.height,
+			width: size.width.value as u32,
+			height: size.height.value as u32,
 			present_mode: surface_capabilities.present_modes[0],
 			alpha_mode: surface_capabilities.alpha_modes[0],
 			view_formats: vec![],
@@ -282,10 +284,10 @@ impl RendererState {
 		})
 	}
 
-	pub fn resize(&mut self, size: Dimensions<u32>) {
-		if size.width > 0 && size.height > 0 {
-			self.config.width = size.width;
-			self.config.height = size.height;
+	pub fn resize(&mut self, size: Size<Pixels<f32>>) {
+		if size.width.value > 0.0 && size.height.value > 0.0 {
+			self.config.width = size.width.value as u32;
+			self.config.height = size.height.value as u32;
 			self.surface.configure(&self.device, &self.config);
 			self.is_surface_configured = true;
 		}

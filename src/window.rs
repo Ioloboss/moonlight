@@ -1,8 +1,10 @@
 use std::sync::{Arc, Mutex, mpsc};
 
-use crate::element::{Colour, Dimensions, Element, Position};
+use crate::element::{Element};
 use crate::internal_loop::{InternalMessage};
-use tapestry::font::Pixels;
+use mircalla_types::units::Pixels;
+use mircalla_types::vectors::{Position, Size};
+use tapestry::font::ToPixelsSize;
 use winit::event_loop::EventLoopProxy;
 
 use wgpu::rwh::{HasDisplayHandle, HasWindowHandle};
@@ -17,8 +19,8 @@ pub struct Window {
 }
 
 impl Window {
-	pub fn inner_size(&self) -> Dimensions<u32> {
-		self.internal.inner_size().into()
+	pub fn inner_size(&self) -> Size<Pixels<f32>> {
+		self.internal.inner_size().to_pixels_size()
 	}
 
 	pub fn pre_present_notify(&self) {
@@ -49,7 +51,7 @@ pub enum MessageFromMainThread {
 pub struct App {
 	transmitter: mpsc::Sender<InternalMessage>,
 	event_loop_proxy: EventLoopProxy<MessageFromMainThread>,
-	mouse_position: (Pixels<f64>, Pixels<f64>),
+	mouse_position: Position<Pixels<f32>>,
 }
 
 impl App {
@@ -57,7 +59,7 @@ impl App {
 		Self {
 			transmitter,
 			event_loop_proxy,
-			mouse_position: (0.0.into(), 0.0.into()),
+			mouse_position: (0.0, 0.0).into(),
 		}
 	}
 }
@@ -84,7 +86,7 @@ impl ApplicationHandler<MessageFromMainThread> for App {
 		match event {
 			WindowEvent::CloseRequested => event_loop.exit(),
 			WindowEvent::Resized(size) => {
-				self.transmitter.send(InternalMessage::Resized(size.into())).unwrap(); // HANDLE THIS PROPERLY
+				self.transmitter.send(InternalMessage::Resized(size.to_pixels_size())).unwrap(); // HANDLE THIS PROPERLY
 			},
 			WindowEvent::RedrawRequested => {
 				self.transmitter.send(InternalMessage::RedrawRequested).unwrap(); // HANDLE THIS PROPERLY
@@ -96,7 +98,7 @@ impl ApplicationHandler<MessageFromMainThread> for App {
 				self.transmitter.send(InternalMessage::MouseEvent(state, button, self.mouse_position)).unwrap(); // HANDLE THIS PROPERLY
 			}
 			WindowEvent::CursorMoved { device_id, position } => {
-				self.mouse_position = (position.x.into(), position.y.into())
+				self.mouse_position = (position.x as f32, position.y as f32).into()
 			}
 			_ => {},
 		}

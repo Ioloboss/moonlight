@@ -12,3 +12,5 @@ pollster = "0.4"
 bytemuck = { version = "1.24", features = [ "derive" ] }
 tapestry = { git = "https://github.com/ioloboss/tapestry" }
 #tapestry = { path = "../tapestry" }
+mircalla_types = { git = "https://github.com/ioloboss/mircalla_types" }
+#mircalla_types = { path = "../mircalla_types" }

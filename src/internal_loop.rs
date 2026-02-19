@@ -1,4 +1,6 @@
-use tapestry::font::{Font, Pixels};
+use mircalla_types::units::Pixels;
+use mircalla_types::vectors::{Colour, Dimension, Direction, Position, Size};
+use tapestry::font::{Font};
 use tapestry::font::font_renderer::{FontRenderer, TextBox};
 use winit::event::{ElementState, KeyEvent, MouseButton};
 use winit::event_loop::EventLoopProxy;
@@ -6,7 +8,7 @@ use winit::keyboard::{Key, SmolStr};
 
 use crate::renderer::{ElementRectangle, RendererState};
 use crate::window::{open_window, MessageFromMainThread, Window};
-use crate::element::{Colour, Dimensions, Dimension, Direction, Element, Position, Size, SizeError};
+use crate::element::{Element, SizingError, Sizing};
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::path::Path;
@@ -15,11 +17,11 @@ use std::{sync::{mpsc::{self, Receiver}, Arc, Mutex}, thread};
 pub enum InternalMessage {
 	Window(Arc<Window>),
 	Resumed,
-	Resized(Dimensions<u32>),
+	Resized(Size<Pixels<f32>>),
 	RedrawRequested,
 	Close,
 	KeyPressed(KeyEvent),
-	MouseEvent(ElementState, MouseButton, (Pixels<f64>, Pixels<f64>)),
+	MouseEvent(ElementState, MouseButton, Position<Pixels<f32>>),
 }
 
 trait Update<UserState, UserMessage> {
@@ -136,10 +138,10 @@ impl<UserState, UserMessage: Debug + Clone, Assemble: AssembleFn<UserState, User
 		}
 	}
 
-	fn recalculate(&mut self) -> Result<(), SizeError> {
+	fn recalculate(&mut self) -> Result<(), SizingError> {
 		let user_root = self.assemble.assemble(&self.user_state);
 		let size = self.renderer_state.window.inner_size();
-		let mut root = Element::new(Direction::Horizontal, Size::Fixed(size.width as u64), Size::Fixed(size.height as u64), Colour::black(), vec![user_root]);
+		let mut root = Element::new(Direction::Horizontal, (Sizing::Fixed(size.width), Sizing::Fixed(size.height)).into(), Colour::black(), vec![user_root]);
 
 		root.calculate_text_data();
 
@@ -150,7 +152,7 @@ impl<UserState, UserMessage: Debug + Clone, Assemble: AssembleFn<UserState, User
 		root.calculate_fit_size(Dimension::Height);
 		root.calculate_final_size(Dimension::Height)?;
 
-		root.calculate_children_position(Position {x: Some(0), y: Some(0)});
+		root.calculate_children_position(Position {x: Some(0.0.into()), y: Some(0.0.into())});
 
 		self.renderer_state.font_renderer.text_boxes = root.collect_text_boxes(size);
 
@@ -177,7 +179,7 @@ impl<UserState, UserMessage: Debug + Clone, Assemble: AssembleFn<UserState, User
 					InternalMessage::Resumed => panic!("InternalMessage::Resumed should only be sent once."),
 					InternalMessage::Resized(size) => {
 						self.renderer_state.resize(size);
-						self.renderer_state.font_renderer.resize(size.width, size.height);
+						self.renderer_state.font_renderer.resize(size);
 						self.recalculate().unwrap();
 						self.renderer_state.render().unwrap();
 					},
@@ -225,7 +227,7 @@ impl<UserState, UserMessage: Debug + Clone, Assemble: AssembleFn<UserState, User
 						match (button, state) {
 							(MouseButton::Left, ElementState::Pressed) => {
 								let user_message = match &self.root {
-									Some(root_element) => root_element.get_on_click(mouse_position.0, mouse_position.1),
+									Some(root_element) => root_element.get_on_click(mouse_position),
 									None => None,
 								};
 								if let Some(user_message) = user_message {

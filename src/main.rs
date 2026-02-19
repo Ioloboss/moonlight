@@ -1,11 +1,12 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use moonlight::element::{Alignment, Alignments, Colour, Dimension, Direction, Element, Position, Size};
+use moonlight::element::{Alignment, Alignments, Element, Sizing};
 use moonlight::internal_loop::{MoonlightApplication, UpdateResponse};
 use tapestry::font::Font;
 use winit::event::{ElementState, KeyEvent};
 use winit::keyboard::{Key, NamedKey, SmolStr};
+use mircalla_types::vectors::{Colour, Direction};
 
 #[derive(Debug, Clone)]
 enum UserMessageTest {
@@ -27,21 +28,21 @@ struct UserStateTest {
 }
 
 fn assemble(user_state: &UserStateTest) -> Element<UserMessageTest> {
-	Element::new(Direction::Horizontal, Size::Grow { minimum: None, maximum: None }, Size::Grow { minimum: None, maximum: None }, Colour::red(), vec!(
-		Element::new(Direction::Vertical, Size::Fit { minimum: None, maximum: None }, Size::Grow { minimum: None, maximum: None }, Colour::green(), vec!(
-			Element::new(Direction::Horizontal, Size::Grow { minimum: None, maximum: None }, Size::Fixed(50), Colour::blue(), Vec::new()),
-			Element::new(Direction::Horizontal, Size::Grow { minimum: None, maximum: None }, Size::Fixed(50), Colour::blue(), Vec::new()).on_click(UserMessageTest::Test),
-			Element::new(Direction::Horizontal, Size::FitText { minimum: None, maximum: None }, Size::FitText { minimum: None, maximum: None }, Colour::blue(), Vec::new()).text(tapestry::font::font_renderer::TextBox { font: Arc::clone(&user_state.font), text: Arc::clone(&user_state.text), pixels_per_em: 50.0.into(), position: (0.0, 0.0).into(), colour: [0.0, 0.0, 0.0] })
-		)).child_gaps(5),
-		Element::new(Direction::Vertical, Size::Grow { minimum: None, maximum: None }, Size::Grow { minimum: None, maximum: None }, Colour::green(), vec!(
-			Element::new(Direction::Horizontal, Size::Grow { minimum: None, maximum: None }, Size::Fixed(50), Colour::blue(), Vec::new()),
-			Element::new(Direction::Horizontal, Size::Grow { minimum: None, maximum: None }, Size::Fixed(50), Colour::blue(), Vec::new()),
-		)).child_gaps(5).alignment(Alignment { x: Alignments::Centre, y: Alignments::Centre }),
-		Element::new(Direction::Vertical, Size::Grow { minimum: None, maximum: None }, Size::Grow { minimum: None, maximum: None }, Colour::green(), vec!(
-			Element::new(Direction::Horizontal, Size::Grow { minimum: None, maximum: None }, Size::Fixed(50), Colour::blue(), Vec::new()),
-			Element::new(Direction::Horizontal, Size::Grow { minimum: None, maximum: None }, Size::Fixed(50), Colour::blue(), Vec::new()),
-		)).child_gaps(5).alignment(Alignment { x: Alignments::End, y: Alignments::End }),
-	)).indentation(5, 5, 5, 5).child_gaps(5)
+	Element::new(Direction::Horizontal, (Sizing::Grow { minimum: None, maximum: None }, Sizing::Grow { minimum: None, maximum: None }).into(), Colour::red(), vec!(
+		Element::new(Direction::Vertical, (Sizing::Fit { minimum: None, maximum: None }, Sizing::Grow { minimum: None, maximum: None }).into(), Colour::green(), vec!(
+			Element::new(Direction::Horizontal, (Sizing::Grow { minimum: None, maximum: None }, Sizing::Fixed(50.0.into())).into(), Colour::blue(), Vec::new()),
+			Element::new(Direction::Horizontal, (Sizing::Grow { minimum: None, maximum: None }, Sizing::Fixed(50.0.into())).into(), Colour::blue(), Vec::new()).on_click(UserMessageTest::Test),
+			Element::new(Direction::Horizontal, (Sizing::FitText { minimum: None, maximum: None }, Sizing::FitText { minimum: None, maximum: None }).into(), Colour::blue(), Vec::new()).text(tapestry::font::font_renderer::TextBox { font: Arc::clone(&user_state.font), text: Arc::clone(&user_state.text), pixels_per_em: 50.0.into(), position: (0.0, 0.0).into(), colour: Colour::black() })
+		)).child_gaps(5.0.into()),
+		Element::new(Direction::Vertical, (Sizing::Grow { minimum: None, maximum: None }, Sizing::Grow { minimum: None, maximum: None }).into(), Colour::green(), vec!(
+			Element::new(Direction::Horizontal, (Sizing::Grow { minimum: None, maximum: None }, Sizing::Fixed(50.0.into())).into(), Colour::blue(), Vec::new()),
+			Element::new(Direction::Horizontal, (Sizing::Grow { minimum: None, maximum: None }, Sizing::Fixed(50.0.into())).into(), Colour::blue(), Vec::new()),
+		)).child_gaps(5.0.into()).alignment(Alignment { x: Alignments::Centre, y: Alignments::Centre }),
+		Element::new(Direction::Vertical, (Sizing::Grow { minimum: None, maximum: None }, Sizing::Grow { minimum: None, maximum: None }).into(), Colour::green(), vec!(
+			Element::new(Direction::Horizontal, (Sizing::Grow { minimum: None, maximum: None }, Sizing::Fixed(50.0.into())).into(), Colour::blue(), Vec::new()),
+			Element::new(Direction::Horizontal, (Sizing::Grow { minimum: None, maximum: None }, Sizing::Fixed(50.0.into())).into(), Colour::blue(), Vec::new()),
+		)).child_gaps(5.0.into()).alignment(Alignment { x: Alignments::End, y: Alignments::End }),
+	)).indentation(5.0.into(), 5.0.into(), 5.0.into(), 5.0.into()).child_gaps(5.0.into())
 }
 
 fn update(user_state: &mut UserStateTest, user_message: UserMessageTest) -> UpdateResponse {

@@ -937,12 +937,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "mircalla_types"
+version = "0.1.0"
+
+[[package]]
 name = "moonlight"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
  "env_logger 0.10.2",
  "log",
+ "mircalla_types",
  "pollster",
  "tapestry",
  "wgpu",
@@ -1727,6 +1732,7 @@ dependencies = [
  "bytemuck",
  "env_logger 0.11.9",
  "log",
+ "mircalla_types",
  "pollster",
  "wgpu",
  "winit",
