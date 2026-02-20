@@ -29,10 +29,10 @@ impl Alignment {
 
 #[derive(Clone, Copy, Debug)]
 pub enum Sizing {
-	Fixed( Pixels<f32> ),
-	Fit{ minimum: Option<Pixels<f32>>, maximum: Option<Pixels<f32>> },
-	Grow{ minimum: Option<Pixels<f32>>, maximum: Option<Pixels<f32>> },
-	FitText { minimum: Option<Pixels<f32>>, maximum: Option<Pixels<f32>> },
+	Fixed( Pixels<u16> ),
+	Fit{ minimum: Option<Pixels<u16>>, maximum: Option<Pixels<u16>> },
+	Grow{ minimum: Option<Pixels<u16>>, maximum: Option<Pixels<u16>> },
+	FitText { minimum: Option<Pixels<u16>>, maximum: Option<Pixels<u16>> },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -42,14 +42,14 @@ pub enum SizingError {
 }
 
 pub struct Indentation {
-	top: Pixels<f32>,
-	right: Pixels<f32>,
-	bottom: Pixels<f32>,
-	left: Pixels<f32>,
+	top: Pixels<u16>,
+	right: Pixels<u16>,
+	bottom: Pixels<u16>,
+	left: Pixels<u16>,
 }
 
-impl From<(Pixels<f32>, Pixels<f32>, Pixels<f32>, Pixels<f32>)> for Indentation {
-	fn from(value: (Pixels<f32>, Pixels<f32>, Pixels<f32>, Pixels<f32>)) -> Self {
+impl From<(Pixels<u16>, Pixels<u16>, Pixels<u16>, Pixels<u16>)> for Indentation {
+	fn from(value: (Pixels<u16>, Pixels<u16>, Pixels<u16>, Pixels<u16>)) -> Self {
 		Self {
 			top: value.0,
 			right: value.1,
@@ -67,16 +67,16 @@ pub struct Element<UserMessage> {
 	// text: Option<Arc<Mutex<String>>>,
 	text: Option<TextBox>,
 	on_click: Option<UserMessage>,
-	child_gaps: Pixels<f32>,
+	child_gaps: Pixels<u16>,
 	indentation: Indentation,
 	alignment: Alignment,
 	id: Option<u64>,
 	// Working values changed by layout engine.
-	calculated_fit_size: Size<Option<Pixels<f32>>>,
-	assigned_size: Size<Option<Pixels<f32>>>,
-	position: Position<Option<Pixels<f32>>>,
-	text_minimum: Option<Pixels<f32>>,
-	text_ideal: Option<Pixels<f32>>,
+	calculated_fit_size: Size<Option<Pixels<u16>>>,
+	assigned_size: Size<Option<Pixels<u16>>>,
+	position: Position<Option<Pixels<u16>>>,
+	text_minimum: Option<Pixels<u16>>,
+	text_ideal: Option<Pixels<u16>>,
 }
 
 impl<UserMessage: Clone> Element<UserMessage> {
@@ -88,8 +88,8 @@ impl<UserMessage: Clone> Element<UserMessage> {
 			children,
 			text: None,
 			on_click: None,
-			child_gaps: 0.0.into(),
-			indentation: (0.0.into(), 0.0.into(), 0.0.into(), 0.0.into()).into(),
+			child_gaps: 0.into(),
+			indentation: (0.into(), 0.into(), 0.into(), 0.into()).into(),
 			alignment: Alignment {x: Alignments::Start, y: Alignments::Start},
 			id: None,
 			calculated_fit_size: Size::none(),
@@ -110,12 +110,12 @@ impl<UserMessage: Clone> Element<UserMessage> {
 		self
 	}
 
-	pub fn child_gaps(mut self, child_gaps: Pixels<f32>) -> Self {
+	pub fn child_gaps(mut self, child_gaps: Pixels<u16>) -> Self {
 		self.child_gaps = child_gaps;
 		self
 	}
 
-	pub fn indentation(mut self, top: Pixels<f32>, right: Pixels<f32>, bottom: Pixels<f32>, left: Pixels<f32>) -> Self {
+	pub fn indentation(mut self, top: Pixels<u16>, right: Pixels<u16>, bottom: Pixels<u16>, left: Pixels<u16>) -> Self {
 		self.indentation = (top, right, bottom, left).into();
 		self
 	}
@@ -133,7 +133,7 @@ impl<UserMessage: Clone> Element<UserMessage> {
 	pub fn calculate_text_data(&mut self) {
 		match &self.text {
 			Some(text) => {
-				self.text_minimum = Some(20.0.into()); // TWENTY IS THE PREDEND WIDTH OF A CHARACTER NOT SOME SPECIAL VALUE.
+				self.text_minimum = Some(20.into()); // TWENTY IS THE PREDEND WIDTH OF A CHARACTER NOT SOME SPECIAL VALUE.
 				self.text_ideal = Some(text.get_ideal_width() + self.indentation.right + self.indentation.left);
 			},
 			None => {
@@ -147,7 +147,7 @@ impl<UserMessage: Clone> Element<UserMessage> {
 		}
 	}
 
-	pub fn collect_text_boxes(&self, screen_size: Size<Pixels<f32>>) -> Vec<TextBox> {
+	pub fn collect_text_boxes(&self, screen_size: Size<Pixels<u16>>) -> Vec<TextBox> {
 		let mut text_boxes: Vec<TextBox> = Vec::new();
 
 		match &self.text {
@@ -156,7 +156,7 @@ impl<UserMessage: Clone> Element<UserMessage> {
 					font: Arc::clone(&text.font),
 					text: Arc::clone(&text.text),
 					pixels_per_em: text.pixels_per_em,
-					position: ((self.position.x.unwrap() + self.indentation.left), ((screen_size.height - self.position.y.unwrap() - self.assigned_size.height.unwrap() + self.indentation.bottom) + text.font.typographic_descender.to_pixels(text.get_pixels_per_font_unit()))).into(),
+					position: ((self.position.x.unwrap() + self.indentation.left), ((screen_size.height - self.position.y.unwrap() - self.assigned_size.height.unwrap() + self.indentation.bottom) + text.font.typographic_descender.to_pixels_rounded(text.get_pixels_per_font_unit()))).into(),
 					colour: text.colour,
 				};
 				text_boxes.push(text_box);
@@ -171,29 +171,29 @@ impl<UserMessage: Clone> Element<UserMessage> {
 		text_boxes
 	}
 
-	fn calculate_text_height(&self) -> Pixels<f32> {
+	fn calculate_text_height(&self) -> Pixels<u16> {
 		match &self.text {
 			Some(text) => {
 				text.get_height() + self.indentation.top + self.indentation.bottom
 			},
-			None => 0.0.into(),
+			None => 0.into(),
 		}
 		// self.text_ideal.unwrap().div_ceil(self.assigned_size.get(Dimension::Width).unwrap()) * 20 // TWENTY IS THE PREDENT WIDTH OF A CHARACTER NOT SOME SPECIAL VALUE.
 	}
 
-	fn get_minimum_size(&self, dimension: Dimension) -> Pixels<f32> {
+	fn get_minimum_size(&self, dimension: Dimension) -> Pixels<u16> {
 		match self.sizing.get(dimension) {
 			Sizing::Fixed( size ) => size,
-			Sizing::Fit { minimum, maximum: _ } => minimum.unwrap_or(0.0.into()),
-			Sizing::Grow { minimum, maximum: _ } => minimum.unwrap_or(0.0.into()),
+			Sizing::Fit { minimum, maximum: _ } => minimum.unwrap_or(0.into()),
+			Sizing::Grow { minimum, maximum: _ } => minimum.unwrap_or(0.into()),
 			Sizing::FitText { minimum, maximum: _ } => match dimension {
-				Dimension::Width => if minimum.unwrap_or(0.0.into()) > self.text_minimum.unwrap_or(0.0.into()) { minimum.unwrap_or(0.0.into()) } else { self.text_minimum.unwrap_or(0.0.into()) },
-				Dimension::Height => minimum.unwrap_or(0.0.into())
+				Dimension::Width => if minimum.unwrap_or(0.into()) > self.text_minimum.unwrap_or(0.into()) { minimum.unwrap_or(0.into()) } else { self.text_minimum.unwrap_or(0.into()) },
+				Dimension::Height => minimum.unwrap_or(0.into())
 			},
 		}
 	}
 
-	fn get_maximum_size(&self, dimension: Dimension) -> Option<Pixels<f32>> {
+	fn get_maximum_size(&self, dimension: Dimension) -> Option<Pixels<u16>> {
 		match self.sizing.get(dimension) {
 			Sizing::Fixed( size ) => Some(size),
 			Sizing::Fit { minimum: _, maximum } => maximum,
@@ -202,8 +202,8 @@ impl<UserMessage: Clone> Element<UserMessage> {
 		}
 	}
 
-	fn calculate_fit_size_along_axis(&mut self, dimension: Dimension) -> Pixels<f32> {
-		let mut  size = 0.0.into();
+	fn calculate_fit_size_along_axis(&mut self, dimension: Dimension) -> Pixels<u16> {
+		let mut  size = 0.into();
 		let number_of_children = self.children.len();
 		size += self.child_gaps * (if number_of_children > 1 {number_of_children - 1} else {0});
 		for child in self.children.iter_mut() {
@@ -213,8 +213,8 @@ impl<UserMessage: Clone> Element<UserMessage> {
 		size
 	}
 
-	fn calculate_fit_size_across_axis(&mut self, dimension: Dimension) -> Pixels<f32> {
-		let mut size = 0.0.into();
+	fn calculate_fit_size_across_axis(&mut self, dimension: Dimension) -> Pixels<u16> {
+		let mut size = 0.into();
 		for child in self.children.iter_mut() {
 			let child_size = child.calculate_fit_size(dimension);
 			if child_size > size {
@@ -224,7 +224,7 @@ impl<UserMessage: Clone> Element<UserMessage> {
 		size
 	}
 
-	pub fn calculate_fit_size(&mut self, dimension: Dimension) -> Pixels<f32> {
+	pub fn calculate_fit_size(&mut self, dimension: Dimension) -> Pixels<u16> {
 		let Indentation {top, right, bottom, left} = self.indentation;
 
 		let mut size = match (dimension, self.direction) {
@@ -290,8 +290,8 @@ impl<UserMessage: Clone> Element<UserMessage> {
 
 				if growable_children.len() < 1 { break; };
 
-				let mut smallest = f32::MAX.into();
-				let mut second_smallest = f32::MAX.into();
+				let mut smallest = u16::MAX.into();
+				let mut second_smallest = u16::MAX.into();
 
 				for growable_child in growable_children.iter() {
 					let assigned_size = growable_child.assigned_size.get(dimension).unwrap();
@@ -379,8 +379,8 @@ impl<UserMessage: Clone> Element<UserMessage> {
 					return Err(SizingError::CantShrinkChildren(1))
 				};
 
-				let mut largest = 0.0.into();
-				let mut second_largest = 0.0.into();
+				let mut largest = 0.into();
+				let mut second_largest = 0.into();
 
 				for shrinkable_child in shrinkable_children.iter() {
 					let assigned_size = shrinkable_child.assigned_size.get(dimension).unwrap();
@@ -487,7 +487,7 @@ impl<UserMessage: Clone> Element<UserMessage> {
 		Ok(())
 	}
 
-	fn calculate_children_position_dimensioned(&mut self, position: Position<Option<Pixels<f32>>>, dimension: Dimension) {
+	fn calculate_children_position_dimensioned(&mut self, position: Position<Option<Pixels<u16>>>, dimension: Dimension) {
 		let Indentation {top, right, bottom, left} = self.indentation;
 
 		let along_start_indentation = match dimension { Dimension::Width => right, Dimension::Height => top };
@@ -517,7 +517,7 @@ impl<UserMessage: Clone> Element<UserMessage> {
 		}
 	}
 
-	pub fn calculate_children_position(&mut self, position: Position<Option<Pixels<f32>>>) {
+	pub fn calculate_children_position(&mut self, position: Position<Option<Pixels<u16>>>) {
 		self.position = position;
 		self.calculate_children_position_dimensioned(position, self.direction.into());
 
@@ -537,7 +537,7 @@ impl<UserMessage: Clone> Element<UserMessage> {
 		}
 	}
 
-	pub fn get_on_click(&self, position: Position<Pixels<f32>>) -> Option<UserMessage> {
+	pub fn get_on_click(&self, position: Position<Pixels<u16>>) -> Option<UserMessage> {
 		let mut on_click: Option<UserMessage> = None;
 		if let Some(on_click_self) = &self.on_click {
 			on_click = Some(on_click_self.clone());
@@ -547,8 +547,8 @@ impl<UserMessage: Clone> Element<UserMessage> {
 			let x_difference = position.x - child.position.x.unwrap();
 			let y_difference = position.y - child.position.y.unwrap();
 
-			if (Pixels { value: 0.0 } <= x_difference) && (x_difference <= child.assigned_size.width.unwrap()) {
-				if (Pixels { value: 0.0 } <= y_difference) && (y_difference <= child.assigned_size.height.unwrap()) {
+			if (Pixels { value: 0 } <= x_difference) && (x_difference <= child.assigned_size.width.unwrap()) {
+				if (Pixels { value: 0 } <= y_difference) && (y_difference <= child.assigned_size.height.unwrap()) {
 					if let Some(on_click_child) = child.get_on_click(position) {
 						on_click = Some(on_click_child);
 					}

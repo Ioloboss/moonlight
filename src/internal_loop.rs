@@ -17,11 +17,11 @@ use std::{sync::{mpsc::{self, Receiver}, Arc, Mutex}, thread};
 pub enum InternalMessage {
 	Window(Arc<Window>),
 	Resumed,
-	Resized(Size<Pixels<f32>>),
+	Resized(Size<Pixels<u16>>),
 	RedrawRequested,
 	Close,
 	KeyPressed(KeyEvent),
-	MouseEvent(ElementState, MouseButton, Position<Pixels<f32>>),
+	MouseEvent(ElementState, MouseButton, Position<Pixels<u16>>),
 }
 
 trait Update<UserState, UserMessage> {
@@ -152,7 +152,7 @@ impl<UserState, UserMessage: Debug + Clone, Assemble: AssembleFn<UserState, User
 		root.calculate_fit_size(Dimension::Height);
 		root.calculate_final_size(Dimension::Height)?;
 
-		root.calculate_children_position(Position {x: Some(0.0.into()), y: Some(0.0.into())});
+		root.calculate_children_position(Position {x: Some(0.into()), y: Some(0.into())});
 
 		self.renderer_state.font_renderer.text_boxes = root.collect_text_boxes(size);
 
@@ -178,8 +178,7 @@ impl<UserState, UserMessage: Debug + Clone, Assemble: AssembleFn<UserState, User
 					InternalMessage::Window(window) => panic!("InternalMessage::Window should only be sent once."),
 					InternalMessage::Resumed => panic!("InternalMessage::Resumed should only be sent once."),
 					InternalMessage::Resized(size) => {
-						self.renderer_state.resize(size);
-						self.renderer_state.font_renderer.resize(size);
+						self.renderer_state.resize(size.into());
 						self.recalculate().unwrap();
 						self.renderer_state.render().unwrap();
 					},
@@ -189,7 +188,7 @@ impl<UserState, UserMessage: Debug + Clone, Assemble: AssembleFn<UserState, User
 							},
 							Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
 								let size = self.renderer_state.window.inner_size();
-								self.renderer_state.resize(size);
+								self.renderer_state.resize(size.into());
 							},
 							Err(e) => {
 								log::error!("Unable to render. Error: {e}");

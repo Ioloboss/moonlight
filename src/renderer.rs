@@ -55,8 +55,8 @@ impl Vertex {
 }
 
 pub struct ElementRectangle {
-	pub position: Position<Pixels<f32>>,
-	pub size: Size<Pixels<f32>>,
+	pub position: Position<Pixels<u16>>,
+	pub size: Size<Pixels<u16>>,
 	pub colour: Colour,
 }
 
@@ -139,10 +139,10 @@ impl RendererState {
 	pub async fn new(window: Arc<Window>) -> Result<Self, NewRendererStateError> {
 		log::info!("New RenderState constructed");
 
-		let size: Size<Pixels<f32>> = window.inner_size();
+		let size: Size<Pixels<u16>> = window.inner_size();
 
 		let element_rectangles = vec![
-			ElementRectangle { position: Position { x: 0.0.into(), y: 0.0.into() }, size, colour: Colour::black()}
+			ElementRectangle { position: Position { x: 0.into(), y: 0.into() }, size: size.into(), colour: Colour::black()}
 		];
 
 		let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
@@ -206,7 +206,7 @@ impl RendererState {
 		});
 
 		let number_of_elements = element_rectangles.len() as u32;
-		let element_rectangles_data = element_rectangles.iter().map(|element_rectangle| element_rectangle.to_raw(size)).collect::<Vec<_>>();
+		let element_rectangles_data = element_rectangles.iter().map(|element_rectangle| element_rectangle.to_raw(size.into())).collect::<Vec<_>>();
 
 		let element_rectangle_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 			label: Some("Element Rectangle Buffer"),
@@ -289,13 +289,14 @@ impl RendererState {
 			self.config.width = size.width.value as u32;
 			self.config.height = size.height.value as u32;
 			self.surface.configure(&self.device, &self.config);
+			self.font_renderer.resize(size);
 			self.is_surface_configured = true;
 		}
 	}
 
 	pub fn update_element_rectangles_buffer(&mut self, element_rectangles: Vec<ElementRectangle>) {
 		self.number_of_elements = element_rectangles.len() as u32;
-		let element_rectangles_data = element_rectangles.iter().map(|element_rectangle| element_rectangle.to_raw(self.window.inner_size())).collect::<Vec<_>>();
+		let element_rectangles_data = element_rectangles.iter().map(|element_rectangle| element_rectangle.to_raw(self.window.inner_size().into())).collect::<Vec<_>>();
 
 		self.element_rectangle_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 			label: Some("Element Rectangle Buffer"),

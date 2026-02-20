@@ -19,7 +19,7 @@ pub struct Window {
 }
 
 impl Window {
-	pub fn inner_size(&self) -> Size<Pixels<f32>> {
+	pub fn inner_size(&self) -> Size<Pixels<u16>> {
 		self.internal.inner_size().to_pixels_size()
 	}
 
@@ -51,7 +51,7 @@ pub enum MessageFromMainThread {
 pub struct App {
 	transmitter: mpsc::Sender<InternalMessage>,
 	event_loop_proxy: EventLoopProxy<MessageFromMainThread>,
-	mouse_position: Position<Pixels<f32>>,
+	mouse_position: Position<Pixels<u16>>,
 }
 
 impl App {
@@ -59,7 +59,7 @@ impl App {
 		Self {
 			transmitter,
 			event_loop_proxy,
-			mouse_position: (0.0, 0.0).into(),
+			mouse_position: (0, 0).into(),
 		}
 	}
 }
@@ -98,7 +98,7 @@ impl ApplicationHandler<MessageFromMainThread> for App {
 				self.transmitter.send(InternalMessage::MouseEvent(state, button, self.mouse_position)).unwrap(); // HANDLE THIS PROPERLY
 			}
 			WindowEvent::CursorMoved { device_id, position } => {
-				self.mouse_position = (position.x as f32, position.y as f32).into()
+				self.mouse_position = (position.x as u16, position.y as u16).into()
 			}
 			_ => {},
 		}
