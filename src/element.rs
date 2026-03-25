@@ -1,38 +1,17 @@
-use std::sync::{Arc, Mutex};
+use std::{sync::{Arc, Mutex}, u64};
 
-use mircalla_types::{units::Pixels, vectors::{Axis, Colour, Dimension, Direction, Position, Size}};
-use tapestry::font::{Font, font_renderer::TextBox};
+use mircalla_types::{units::Pixels, vectors::{Alignment, Alignments, Axis, Colour, Dimension, Direction, Position, Size}};
+use tapestry::font::{font_renderer::TextBox};
 
 use crate::renderer::ElementRectangle;
 
-#[derive(Clone, Copy)]
-pub enum Alignments {
-	Start,
-	Centre,
-	End,
-}
-
-#[derive(Clone, Copy)]
-pub struct Alignment {
-	pub x: Alignments,
-	pub y: Alignments,
-}
-
-impl Alignment {
-	pub fn get(&self, axis: Axis) -> Alignments {
-		match axis {
-			Axis::X => self.x,
-			Axis::Y => self.y,
-		}
-	}
-}
-
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum Sizing {
-	Fixed( Pixels<u16> ),
-	Fit{ minimum: Option<Pixels<u16>>, maximum: Option<Pixels<u16>> },
-	Grow{ minimum: Option<Pixels<u16>>, maximum: Option<Pixels<u16>> },
-	FitText { minimum: Option<Pixels<u16>>, maximum: Option<Pixels<u16>> },
+	Fixed( Pixels<i32> ),
+	Fit{ minimum: Option<Pixels<i32>>, maximum: Option<Pixels<i32>> },
+	Grow{ minimum: Option<Pixels<i32>>, maximum: Option<Pixels<i32>> },
+	Scroll{ minimum: Option<Pixels<i32>>, maximum: Option<Pixels<i32>>, scrolled: Arc<Mutex<Pixels<i32>>> },
+	FitText { minimum: Option<Pixels<i32>>, maximum: Option<Pixels<i32>> },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -41,15 +20,16 @@ pub enum SizingError {
 	CantGrow(),
 }
 
+#[derive(Clone)]
 pub struct Indentation {
-	top: Pixels<u16>,
-	right: Pixels<u16>,
-	bottom: Pixels<u16>,
-	left: Pixels<u16>,
+	top: Pixels<i32>,
+	right: Pixels<i32>,
+	bottom: Pixels<i32>,
+	left: Pixels<i32>,
 }
 
-impl From<(Pixels<u16>, Pixels<u16>, Pixels<u16>, Pixels<u16>)> for Indentation {
-	fn from(value: (Pixels<u16>, Pixels<u16>, Pixels<u16>, Pixels<u16>)) -> Self {
+impl From<(Pixels<i32>, Pixels<i32>, Pixels<i32>, Pixels<i32>)> for Indentation {
+	fn from(value: (Pixels<i32>, Pixels<i32>, Pixels<i32>, Pixels<i32>)) -> Self {
 		Self {
 			top: value.0,
 			right: value.1,
@@ -59,6 +39,29 @@ impl From<(Pixels<u16>, Pixels<u16>, Pixels<u16>, Pixels<u16>)> for Indentation 
 	}
 }
 
+pub trait ScrollInputFn<UserMessage> {
+	fn on_scroll(&self, distance: Pixels<i32>) -> Option<UserMessage>;
+}
+
+impl<UserMessage, T> ScrollInputFn<UserMessage> for T
+where
+	T: Fn(Pixels<i32>) -> Option<UserMessage>
+{
+	fn on_scroll(&self, distance: Pixels<i32>) -> Option<UserMessage> {
+		self(distance)
+	}
+}
+
+/* 
+pub struct NoScrollInput;
+
+impl<UserMessage> ScrollInputFn<UserMessage> for NoScrollInput {
+	fn keyboard_input(&self, _: Pixels<i32>) -> Option<UserMessage> {
+		None
+	}
+} */
+
+#[derive(Clone)]
 pub struct Element<UserMessage> {
 	direction: Direction,
 	sizing: Size<Sizing>,
@@ -67,16 +70,18 @@ pub struct Element<UserMessage> {
 	// text: Option<Arc<Mutex<String>>>,
 	text: Option<TextBox>,
 	on_click: Option<UserMessage>,
-	child_gaps: Pixels<u16>,
+	on_scroll: Option<Arc<dyn ScrollInputFn<UserMessage>>>,
+	child_gaps: Pixels<i32>,
 	indentation: Indentation,
 	alignment: Alignment,
 	id: Option<u64>,
 	// Working values changed by layout engine.
-	calculated_fit_size: Size<Option<Pixels<u16>>>,
-	assigned_size: Size<Option<Pixels<u16>>>,
-	position: Position<Option<Pixels<u16>>>,
-	text_minimum: Option<Pixels<u16>>,
-	text_ideal: Option<Pixels<u16>>,
+	calculated_fit_size: Size<Option<Pixels<i32>>>,
+	assigned_size: Size<Option<Pixels<i32>>>,
+	position: Position<Option<Pixels<i32>>>,
+	text_minimum: Option<Pixels<i32>>,
+	text_ideal: Option<Pixels<i32>>,
+	bounds: Option<(Position<Pixels<i32>>, Position<Pixels<i32>>)>,
 }
 
 impl<UserMessage: Clone> Element<UserMessage> {
@@ -88,6 +93,7 @@ impl<UserMessage: Clone> Element<UserMessage> {
 			children,
 			text: None,
 			on_click: None,
+			on_scroll: None,
 			child_gaps: 0.into(),
 			indentation: (0.into(), 0.into(), 0.into(), 0.into()).into(),
 			alignment: Alignment {x: Alignments::Start, y: Alignments::Start},
@@ -97,6 +103,7 @@ impl<UserMessage: Clone> Element<UserMessage> {
 			position: Position::none(),
 			text_minimum: None,
 			text_ideal: None,
+			bounds: None,
 		}
 	}
 
@@ -110,12 +117,17 @@ impl<UserMessage: Clone> Element<UserMessage> {
 		self
 	}
 
-	pub fn child_gaps(mut self, child_gaps: Pixels<u16>) -> Self {
+	pub fn on_scroll<NewScrollInput: ScrollInputFn<UserMessage> + 'static>(mut self, on_scroll: NewScrollInput) -> Self{
+		self.on_scroll = Some(Arc::new(on_scroll));
+		self
+	}
+
+	pub fn child_gaps(mut self, child_gaps: Pixels<i32>) -> Self {
 		self.child_gaps = child_gaps;
 		self
 	}
 
-	pub fn indentation(mut self, top: Pixels<u16>, right: Pixels<u16>, bottom: Pixels<u16>, left: Pixels<u16>) -> Self {
+	pub fn indentation(mut self, top: Pixels<i32>, right: Pixels<i32>, bottom: Pixels<i32>, left: Pixels<i32>) -> Self {
 		self.indentation = (top, right, bottom, left).into();
 		self
 	}
@@ -128,6 +140,23 @@ impl<UserMessage: Clone> Element<UserMessage> {
 	pub fn id(mut self, id: u64) -> Self {
 		self.id = Some(id);
 		self
+	}
+
+	pub fn is_in_bounds(&self, screen_size: Size<Pixels<i32>>, bounds: (Position<Pixels<i32>>, Position<Pixels<i32>>)) -> bool {
+		let (lower_left, upper_right) = bounds;
+		let x = self.position.x.unwrap();
+		let y = screen_size.height - self.position.y.unwrap() - self.assigned_size.height.unwrap();
+
+		let width= self.assigned_size.width.unwrap();
+		let height= self.assigned_size.height.unwrap();
+
+		let top = y + height;
+		let bottom = y;
+
+		let left = x;
+		let right = x + width;
+
+		(top > lower_left.y) && (bottom < upper_right.y) && (right > lower_left.x) && (left < upper_right.x)
 	}
 	
 	pub fn calculate_text_data(&mut self) {
@@ -147,17 +176,38 @@ impl<UserMessage: Clone> Element<UserMessage> {
 		}
 	}
 
-	pub fn collect_text_boxes(&self, screen_size: Size<Pixels<u16>>) -> Vec<TextBox> {
+	pub fn collect_text_boxes(&self, screen_size: Size<Pixels<i32>>) -> Vec<TextBox> {
 		let mut text_boxes: Vec<TextBox> = Vec::new();
 
 		match &self.text {
 			Some(text) => {
+				let calculated_bounds = {
+						let lower_left_corner = (self.position.x.unwrap() + self.indentation.left, screen_size.height - self.position.y.unwrap() - self.assigned_size.height.unwrap() + self.indentation.bottom).into();
+						let upper_right_corner = (self.position.x.unwrap() + self.assigned_size.width.unwrap() - self.indentation.right, screen_size.height - self.position.y.unwrap() + self.indentation.top).into();
+						(lower_left_corner, upper_right_corner)
+				};
+
+				let bounds = match self.bounds {
+					Some(bounds) => {
+						let lower_left_corner = bounds.0.max(&calculated_bounds.0);
+						let upper_left_corner = bounds.1.min(&calculated_bounds.1);
+						(lower_left_corner, upper_left_corner)
+					},
+					None => {
+						calculated_bounds
+					},
+				};
+
 				let text_box = TextBox {
 					font: Arc::clone(&text.font),
 					text: Arc::clone(&text.text),
 					pixels_per_em: text.pixels_per_em,
-					position: ((self.position.x.unwrap() + self.indentation.left), ((screen_size.height - self.position.y.unwrap() - self.assigned_size.height.unwrap() + self.indentation.bottom) + text.font.typographic_descender.to_pixels_rounded(text.get_pixels_per_font_unit()))).into(),
+					position: ((self.position.x.unwrap() + self.indentation.left), ((screen_size.height - self.position.y.unwrap() - self.text.as_ref().map(|text_box| text_box.get_height_offset()).unwrap() - self.indentation.bottom) + text.font.typographic_descender.to_pixels_rounded(text.get_pixels_per_font_unit()))).into(),
+					text_box_size: (self.assigned_size.width.unwrap() - self.indentation.left - self.indentation.right, self.assigned_size.height.unwrap() - self.indentation.top - self.indentation.bottom).into(),
+					bounds,
 					colour: text.colour,
+					wrap_options: text.wrap_options,
+					alignment: text.alignment,
 				};
 				text_boxes.push(text_box);
 			},
@@ -165,27 +215,38 @@ impl<UserMessage: Clone> Element<UserMessage> {
 		}
 
 		for child in self.children.iter() {
-			text_boxes.append(&mut child.collect_text_boxes(screen_size));
+			match self.bounds {
+				Some(bounds) => {
+					if child.is_in_bounds(screen_size, bounds) {
+						text_boxes.append(&mut child.collect_text_boxes(screen_size));
+					}
+
+				},
+				None => {
+					text_boxes.append(&mut child.collect_text_boxes(screen_size));
+				},
+			}
 		}
 
 		text_boxes
 	}
 
-	fn calculate_text_height(&self) -> Pixels<u16> {
+	fn calculate_text_height(&self) -> Pixels<i32> {
 		match &self.text {
 			Some(text) => {
-				text.get_height() + self.indentation.top + self.indentation.bottom
+				text.get_height(self.assigned_size.width.unwrap()) + self.indentation.top + self.indentation.bottom
 			},
 			None => 0.into(),
 		}
 		// self.text_ideal.unwrap().div_ceil(self.assigned_size.get(Dimension::Width).unwrap()) * 20 // TWENTY IS THE PREDENT WIDTH OF A CHARACTER NOT SOME SPECIAL VALUE.
 	}
 
-	fn get_minimum_size(&self, dimension: Dimension) -> Pixels<u16> {
-		match self.sizing.get(dimension) {
+	fn get_minimum_size(&self, dimension: Dimension) -> Pixels<i32> {
+		match self.sizing.get_clone(dimension) {
 			Sizing::Fixed( size ) => size,
 			Sizing::Fit { minimum, maximum: _ } => minimum.unwrap_or(0.into()),
 			Sizing::Grow { minimum, maximum: _ } => minimum.unwrap_or(0.into()),
+			Sizing::Scroll { minimum, maximum: _, scrolled: _ } => minimum.unwrap_or(0.into()),
 			Sizing::FitText { minimum, maximum: _ } => match dimension {
 				Dimension::Width => if minimum.unwrap_or(0.into()) > self.text_minimum.unwrap_or(0.into()) { minimum.unwrap_or(0.into()) } else { self.text_minimum.unwrap_or(0.into()) },
 				Dimension::Height => minimum.unwrap_or(0.into())
@@ -193,38 +254,60 @@ impl<UserMessage: Clone> Element<UserMessage> {
 		}
 	}
 
-	fn get_maximum_size(&self, dimension: Dimension) -> Option<Pixels<u16>> {
-		match self.sizing.get(dimension) {
+	fn get_maximum_size(&self, dimension: Dimension) -> Option<Pixels<i32>> {
+		match self.sizing.get_clone(dimension) {
 			Sizing::Fixed( size ) => Some(size),
 			Sizing::Fit { minimum: _, maximum } => maximum,
 			Sizing::Grow { minimum: _, maximum } => maximum,
+			Sizing::Scroll { minimum: _, maximum, scrolled: _ } => maximum,
 			Sizing::FitText { minimum: _, maximum } => maximum,
 		}
 	}
 
-	fn calculate_fit_size_along_axis(&mut self, dimension: Dimension) -> Pixels<u16> {
-		let mut  size = 0.into();
-		let number_of_children = self.children.len();
-		size += self.child_gaps * (if number_of_children > 1 {number_of_children - 1} else {0});
-		for child in self.children.iter_mut() {
-			size += child.calculate_fit_size(dimension);
+	fn calculate_fit_size_along_axis(&mut self, dimension: Dimension) -> Pixels<i32> {
+		match self.sizing.get_clone(dimension) {
+			Sizing::Scroll { minimum: _, maximum: _, scrolled: _ } => {
+				for child in self.children.iter_mut() {
+					child.calculate_fit_size(dimension);
+				}
+				0.into()
+			},
+			_ => {
+				let mut  size = 0.into();
+				let number_of_children = self.children.len();
+				size += self.child_gaps * (if number_of_children > 1 {number_of_children - 1} else {0});
+				for child in self.children.iter_mut() {
+					size += child.calculate_fit_size(dimension);
 
+				}
+				size
+			},
 		}
-		size
 	}
 
-	fn calculate_fit_size_across_axis(&mut self, dimension: Dimension) -> Pixels<u16> {
-		let mut size = 0.into();
-		for child in self.children.iter_mut() {
-			let child_size = child.calculate_fit_size(dimension);
-			if child_size > size {
-				size = child_size
-			};
+	fn calculate_fit_size_across_axis(&mut self, dimension: Dimension) -> Pixels<i32> {
+		match self.sizing.get_clone(dimension) {
+			Sizing::Scroll { minimum: _, maximum: _, scrolled: _ } => {
+				for child in self.children.iter_mut() {
+					child.calculate_fit_size(dimension);
+				}
+				0.into()
+			},
+			_ => {
+				let mut size = 0.into();
+				for child in self.children.iter_mut() {
+					let child_size = child.calculate_fit_size(dimension);
+					if child_size > size {
+						size = child_size
+					};
+				}
+				size
+			},
 		}
-		size
+		
 	}
 
-	pub fn calculate_fit_size(&mut self, dimension: Dimension) -> Pixels<u16> {
+	pub fn calculate_fit_size(&mut self, dimension: Dimension) -> Pixels<i32> {
 		let Indentation {top, right, bottom, left} = self.indentation;
 
 		let mut size = match (dimension, self.direction) {
@@ -234,7 +317,7 @@ impl<UserMessage: Clone> Element<UserMessage> {
 			(Dimension::Height, Direction::Vertical) => self.calculate_fit_size_along_axis(dimension) + top + bottom,
 		};
 
-		if let Sizing::FitText { minimum: _, maximum: _ } = self.sizing.get(dimension) {
+		if let Sizing::FitText { minimum: _, maximum: _ } = self.sizing.get_clone(dimension) {
 			if let Dimension::Width = dimension {
 				if size < self.text_ideal.unwrap() {
 					size = self.text_ideal.unwrap();
@@ -271,11 +354,12 @@ impl<UserMessage: Clone> Element<UserMessage> {
 		if self.assigned_size.get(dimension).unwrap() > self.calculated_fit_size.get(dimension).unwrap() {
 			let mut growable_children:Vec<&mut Element<UserMessage>> = Vec::new();
 			for child in self.children.iter_mut() {
-				match child.sizing.get(dimension) {
+				match child.sizing.get_clone(dimension) {
 					Sizing::Fixed( _ ) => continue,
 					Sizing::Fit { minimum: _, maximum: _ } => continue,
 					Sizing::FitText { minimum: _, maximum: _ } => continue,
 					Sizing::Grow { minimum: _, maximum: _ } => growable_children.push(child),
+					Sizing::Scroll { minimum: _, maximum: _, scrolled: _ } => growable_children.push(child),
 				};
 			};
 
@@ -290,8 +374,8 @@ impl<UserMessage: Clone> Element<UserMessage> {
 
 				if growable_children.len() < 1 { break; };
 
-				let mut smallest = u16::MAX.into();
-				let mut second_smallest = u16::MAX.into();
+				let mut smallest = i32::MAX.into();
+				let mut second_smallest = i32::MAX.into();
 
 				for growable_child in growable_children.iter() {
 					let assigned_size = growable_child.assigned_size.get(dimension).unwrap();
@@ -348,9 +432,11 @@ impl<UserMessage: Clone> Element<UserMessage> {
 		if self.assigned_size.get(dimension).unwrap() < self.calculated_fit_size.get(dimension).unwrap() {
 			let mut shrinkable_children: Vec<&mut Element<UserMessage>> = Vec::new();
 			for child in self.children.iter_mut() {
-				match child.sizing.get(dimension) {
+				match child.sizing.get_clone(dimension) {
 					Sizing::Fixed( _ ) => continue,
-					Sizing::Grow { minimum: _, maximum: _ } => continue,
+					// Sizing::Grow { minimum: _, maximum: _ } => continue,
+					Sizing::Grow { minimum: _, maximum: _ } => shrinkable_children.push(child), // MAYBE ???
+					Sizing::Scroll { minimum: _, maximum: _, scrolled: _ } => shrinkable_children.push(child),
 					Sizing::Fit { minimum: _, maximum: _ } => shrinkable_children.push(child),
 					Sizing::FitText { minimum: _, maximum: _ } => shrinkable_children.push(child),
 				};
@@ -366,7 +452,7 @@ impl<UserMessage: Clone> Element<UserMessage> {
 
 				if shrinkable_children.len() < 1 {
 					if let Dimension::Width = dimension {
-						if let Sizing::FitText { minimum: _, maximum: _ } = self.sizing.get(dimension) {
+						if let Sizing::FitText { minimum: _, maximum: _ } = self.sizing.get_clone(dimension) {
 							if self.assigned_size.get(dimension).unwrap() > self.get_minimum_size(dimension) {
 								self.calculated_fit_size.set(dimension, self.assigned_size.get(dimension));
 								return Ok(());
@@ -443,7 +529,7 @@ impl<UserMessage: Clone> Element<UserMessage> {
 		};
 		for child in self.children.iter_mut() {
 			if child.assigned_size.get(dimension).unwrap() < available_size {
-				match child.sizing.get(dimension) {
+				match child.sizing.get_clone(dimension) {
 					Sizing::Fixed( _ ) => continue,
 					Sizing::Fit{ minimum: _, maximum: _ } => continue,
 					Sizing::FitText { minimum: _, maximum: _ } => continue,
@@ -452,12 +538,27 @@ impl<UserMessage: Clone> Element<UserMessage> {
 							if maximum < available_size { Some(maximum) } else { Some(available_size) }
 						} else { Some(available_size) });
 					},
+					Sizing::Scroll { minimum: _, maximum: _, scrolled: _ } => {
+						child.assigned_size.set(dimension, if let Some(maximum) = child.get_maximum_size(dimension) {
+							if maximum < available_size { Some(maximum) } else { Some(available_size) }
+						} else { Some(available_size) });
+					},
 				};
 			};
 			if child.assigned_size.get(dimension).unwrap() > available_size {
-				match child.sizing.get(dimension) {
+				match child.sizing.get_clone(dimension) {
 					Sizing::Fixed( _ ) => return Err(SizingError::CantShrinkChildren(2)),
-					Sizing::Grow{ minimum: _, maximum: _ } => return  Err(SizingError::CantShrinkChildren(3)),
+					/* Sizing::Grow{ minimum: _, maximum: _ } => {
+						println!("Dimension: {dimension:?}");
+						println!("Child ID: {}", child.id.unwrap_or(u64::MAX));
+						println!("Child Assigned Size: {:?}", child.assigned_size.get(dimension).unwrap());
+						println!("Self ID: {}", self.id.unwrap_or(u64::MAX));
+						println!("Available Size: {available_size:?}");
+						return Err(SizingError::CantShrinkChildren(3))
+					}, */
+					Sizing::Grow { minimum: _, maximum: _ } => {
+						child.assigned_size.set(dimension, if child.get_minimum_size(dimension) > available_size { return Err(SizingError::CantShrinkChildren(3)) } else { Some(available_size) });
+					},
 					Sizing::Fit { minimum: _, maximum: _ } => {
 						child.assigned_size.set(dimension, if child.get_minimum_size(dimension) > available_size { return Err(SizingError::CantShrinkChildren(4)) } else { Some(available_size) });
 					},
@@ -465,6 +566,7 @@ impl<UserMessage: Clone> Element<UserMessage> {
 						child.assigned_size.set(dimension, if child.get_minimum_size(dimension) > available_size { return Err(SizingError::CantShrinkChildren(5)) } else { Some(available_size) });
 
 					},
+					Sizing::Scroll { minimum: _, maximum: _, scrolled: _ } => return Err(SizingError::CantShrinkChildren(6)),
 				};
 			};
 		}
@@ -487,57 +589,105 @@ impl<UserMessage: Clone> Element<UserMessage> {
 		Ok(())
 	}
 
-	fn calculate_children_position_dimensioned(&mut self, position: Position<Option<Pixels<u16>>>, dimension: Dimension) {
+	fn calculate_children_position_dimensioned(&mut self, position: Position<Option<Pixels<i32>>>, dimension: Dimension, screen_size: Size<Pixels<i32>>) {
 		let Indentation {top, right, bottom, left} = self.indentation;
 
 		let along_start_indentation = match dimension { Dimension::Width => right, Dimension::Height => top };
-		let along_end_indentation = match dimension { Dimension::Width => left, Dimension::Height => bottom };
 		let across_start_indentation = match dimension { Dimension::Width => top, Dimension::Height => right };
 		let across_end_indentation = match dimension { Dimension::Width => bottom, Dimension::Height => left };
 
 		let along = position.get(dimension.into()).unwrap();
 		let across = position.get(dimension.opposite().into()).unwrap();
 		let excess_along = self.assigned_size.get(dimension).unwrap() - self.calculated_fit_size.get(dimension).unwrap();
-		let mut cummulative_along = match self.alignment.get(dimension.into()) {
-			Alignments::Start => along_start_indentation,
-			Alignments::Centre => along_start_indentation + excess_along / 2,
-			Alignments::End => along_start_indentation + excess_along,
+		let mut cummulative_along: Pixels<i32> = match self.alignment.get(dimension.into()) {
+			Alignments::Start => along_start_indentation.into(),
+			Alignments::Centre => (along_start_indentation + excess_along / 2).into(),
+			Alignments::End => (along_start_indentation + excess_along).into(),
 		};
+		if let Sizing::Scroll { minimum: _, maximum: _, scrolled } = self.sizing.get_clone(dimension) {
+			let scrolled_lock = scrolled.lock().unwrap();
+			cummulative_along += *scrolled_lock;
+		}
 		for child in self.children.iter_mut() {
+			if let Sizing::Scroll { minimum: _, maximum: _, scrolled: _ } = self.sizing.get_clone(dimension) {
+				let calculated_bounds = {
+						let lower_left_corner = (self.position.x.unwrap() + self.indentation.left, screen_size.height - self.position.y.unwrap() - self.assigned_size.height.unwrap() + self.indentation.bottom).into();
+						let upper_right_corner = (self.position.x.unwrap() + self.assigned_size.width.unwrap() - self.indentation.right, screen_size.height - self.position.y.unwrap() - self.indentation.top).into();
+						(lower_left_corner, upper_right_corner)
+				};
+				child.bounds = Some(calculated_bounds);
+			} else {
+				if let Some(bounds) = self.bounds {
+					child.bounds = Some(bounds);
+				}
+			}
 			let child_excess_across = self.assigned_size.get(dimension.opposite()).unwrap() - child.assigned_size.get(dimension.opposite()).unwrap() - across_start_indentation - across_end_indentation;
-			let mut child_position = Position::none();
-			child_position.set(dimension.into(), Some(cummulative_along + along));
+			let mut child_position: Position<Option<Pixels<i32>>> = Position::none();
+			child_position.set(dimension.into(), Some(((cummulative_along + along).value as i32).into()));
 			child_position.set(dimension.opposite().into(), match self.alignment.get(dimension.opposite().into()) {
 				Alignments::Start => Some(across_start_indentation + across),
 				Alignments::Centre => Some(across_start_indentation + child_excess_across / 2 + across),
 				Alignments::End => Some(across_start_indentation + child_excess_across + across),
 			});
 			cummulative_along += child.assigned_size.get(dimension).unwrap() + self.child_gaps;
-			child.calculate_children_position(child_position);
+			child.calculate_children_position(child_position, screen_size);
 		}
 	}
 
-	pub fn calculate_children_position(&mut self, position: Position<Option<Pixels<u16>>>) {
+	pub fn calculate_children_position(&mut self, position: Position<Option<Pixels<i32>>>, screen_size: Size<Pixels<i32>>) {
 		self.position = position;
-		self.calculate_children_position_dimensioned(position, self.direction.into());
-
+		self.calculate_children_position_dimensioned(position, self.direction.into(), screen_size);
 	}
 
-	pub fn to_rectangles(&self, element_rectangles: &mut Vec<ElementRectangle>) {
+	pub fn to_rectangles(&self, screen_size: Size<Pixels<i32>>, element_rectangles: &mut Vec<ElementRectangle>) {
+
 		element_rectangles.push(
 			ElementRectangle {
 				position: Position { x: self.position.x.unwrap(), y: self.position.y.unwrap() },
 				size: Size { width: self.assigned_size.width.unwrap(), height: self.assigned_size.height.unwrap() },
 				colour: self.colour,
+				bounds: self.bounds,
+				id: self.id,
 			}
 		);
 
 		for child in self.children.iter() {
-			child.to_rectangles(element_rectangles);
+			match self.bounds {
+				Some(bounds) => {
+					if child.is_in_bounds(screen_size, bounds) {
+						child.to_rectangles(screen_size, element_rectangles);
+					}
+
+				},
+				None => {
+					child.to_rectangles(screen_size, element_rectangles);
+				},
+			}
 		}
 	}
 
-	pub fn get_on_click(&self, position: Position<Pixels<u16>>) -> Option<UserMessage> {
+	pub fn wrap_text(&mut self) {
+		if let Sizing::FitText { minimum, maximum } = self.sizing.height {
+			let text_height = self.calculate_text_height();
+
+			match minimum {
+				Some(minimum) => {
+					if minimum < text_height {
+						self.sizing.height = Sizing::FitText { minimum: Some(text_height), maximum }
+					}
+				},
+				None => {
+					self.sizing.height = Sizing::FitText { minimum: Some(text_height), maximum }
+				}
+			}
+		}
+
+		for child in self.children.iter_mut() {
+			child.wrap_text();
+		}
+	}
+
+	pub fn get_on_click(&self, position: Position<Pixels<i32>>) -> Option<UserMessage> {
 		let mut on_click: Option<UserMessage> = None;
 		if let Some(on_click_self) = &self.on_click {
 			on_click = Some(on_click_self.clone());
@@ -557,6 +707,28 @@ impl<UserMessage: Clone> Element<UserMessage> {
 		}
 
 		on_click
+	}
+
+	pub fn get_on_scroll(&self, position: Position<Pixels<i32>>) -> Option<Arc<dyn ScrollInputFn<UserMessage>>> {
+		let mut on_scroll: Option<Arc<dyn ScrollInputFn<UserMessage>>> = None;
+		if let Some(on_scroll_self) = &self.on_scroll {
+			on_scroll = Some(on_scroll_self.clone());
+		}
+
+		for child in self.children.iter() {
+			let x_difference = position.x - child.position.x.unwrap();
+			let y_difference = position.y - child.position.y.unwrap();
+
+			if (Pixels { value: 0 } <= x_difference) && (x_difference <= child.assigned_size.width.unwrap()) {
+				if (Pixels { value: 0 } <= y_difference) && (y_difference <= child.assigned_size.height.unwrap()) {
+					if let Some(on_scroll_child) = child.get_on_scroll(position) {
+						on_scroll = Some(on_scroll_child);
+					}
+				}
+			}
+		}
+
+		on_scroll
 	}
 }
 

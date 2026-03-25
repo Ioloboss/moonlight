@@ -1,16 +1,16 @@
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{Arc, mpsc};
 
-use crate::element::{Element};
 use crate::internal_loop::{InternalMessage};
 use mircalla_types::units::Pixels;
 use mircalla_types::vectors::{Position, Size};
 use tapestry::font::ToPixelsSize;
+use winit::dpi::PhysicalPosition;
 use winit::event_loop::EventLoopProxy;
 
 use wgpu::rwh::{HasDisplayHandle, HasWindowHandle};
 use winit::platform::wayland::EventLoopBuilderExtWayland;
 use winit::{
-	application::ApplicationHandler, error::EventLoopError, event::*, event_loop::{ActiveEventLoop, EventLoop}, keyboard::{KeyCode, PhysicalKey},
+	application::ApplicationHandler, event::*, event_loop::{ActiveEventLoop, EventLoop},
 };
 
 pub struct Window {
@@ -19,7 +19,7 @@ pub struct Window {
 }
 
 impl Window {
-	pub fn inner_size(&self) -> Size<Pixels<u16>> {
+	pub fn inner_size(&self) -> Size<Pixels<i32>> {
 		self.internal.inner_size().to_pixels_size()
 	}
 
@@ -28,7 +28,7 @@ impl Window {
 	}
 
 	pub fn close(&self) {
-		self.event_loop_proxy.send_event(MessageFromMainThread::Close);
+		self.event_loop_proxy.send_event(MessageFromMainThread::Close).unwrap();
 	}
 }
 
@@ -40,10 +40,11 @@ impl HasWindowHandle for Window{
 
 impl HasDisplayHandle for Window {
 	fn display_handle(&self) -> Result<wgpu::rwh::DisplayHandle<'_>, wgpu::rwh::HandleError> {
-	    self.internal.display_handle()
+		self.internal.display_handle()
 	}
 }
 
+#[derive(Debug)]
 pub enum MessageFromMainThread {
 	Close,
 }
@@ -51,7 +52,7 @@ pub enum MessageFromMainThread {
 pub struct App {
 	transmitter: mpsc::Sender<InternalMessage>,
 	event_loop_proxy: EventLoopProxy<MessageFromMainThread>,
-	mouse_position: Position<Pixels<u16>>,
+	mouse_position: Position<Pixels<i32>>,
 }
 
 impl App {
@@ -80,7 +81,7 @@ impl ApplicationHandler<MessageFromMainThread> for App {
 	fn window_event(
 		&mut self,
 		event_loop: &ActiveEventLoop,
-		window_id: winit::window::WindowId,
+		_window_id: winit::window::WindowId,
 		event: WindowEvent,
 	) {
 		match event {
@@ -96,9 +97,19 @@ impl ApplicationHandler<MessageFromMainThread> for App {
 			},
 			WindowEvent::MouseInput { device_id, state, button } => {
 				self.transmitter.send(InternalMessage::MouseEvent(state, button, self.mouse_position)).unwrap(); // HANDLE THIS PROPERLY
-			}
+			},
 			WindowEvent::CursorMoved { device_id, position } => {
-				self.mouse_position = (position.x as u16, position.y as u16).into()
+				self.mouse_position = (position.x as i32, position.y as i32).into()
+			},
+			WindowEvent::MouseWheel { device_id, delta, phase } => {
+				let distance = match delta {
+					MouseScrollDelta::LineDelta(horizontal, vertical) => todo!("Line Scrolling Not Implemented"),
+					MouseScrollDelta::PixelDelta(PhysicalPosition {x, y}) => {
+						//println!("Scrolling {y}, with phase {phase:?}"); // Potentially Batch Scroll Messages.
+						(y as i32).into()
+					}
+				};
+				self.transmitter.send(InternalMessage::Scroll(distance, self.mouse_position)).unwrap();
 			}
 			_ => {},
 		}

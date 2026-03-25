@@ -10,7 +10,7 @@ env_logger = "0.10"
 log = "0.4"
 pollster = "0.4"
 bytemuck = { version = "1.24", features = [ "derive" ] }
-tapestry = { git = "https://github.com/ioloboss/tapestry" }
-#tapestry = { path = "../tapestry" }
-mircalla_types = { git = "https://github.com/ioloboss/mircalla_types" }
-#mircalla_types = { path = "../mircalla_types" }
+#tapestry = { git = "https://github.com/ioloboss/tapestry" }
+tapestry = { path = "../tapestry_backup" }
+#mircalla_types = { git = "https://github.com/ioloboss/mircalla_types" }
+mircalla_types = { path = "../mircalla_types" }

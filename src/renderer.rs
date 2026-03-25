@@ -1,18 +1,11 @@
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::Arc;
 
-use crate::element::Element;
-use crate::internal_loop::{InternalMessage};
 use crate::window::Window;
 
 use mircalla_types::units::Pixels;
 use mircalla_types::vectors::{Colour, Position, Size};
 use tapestry::font::font_renderer::FontRenderer;
-use wgpu::{rwh::{HasDisplayHandle, HasWindowHandle}, util::{DeviceExt, RenderEncoder}, SurfaceTarget};
-
-use winit::platform::wayland::EventLoopBuilderExtWayland;
-use winit::{
-	application::ApplicationHandler, error::EventLoopError, event::*, event_loop::{ActiveEventLoop, EventLoop}, keyboard::{KeyCode, PhysicalKey},
-};
+use wgpu::util::DeviceExt;
 
 #[derive(Clone, Debug)]
 pub enum NewRendererStateError {
@@ -55,17 +48,49 @@ impl Vertex {
 }
 
 pub struct ElementRectangle {
-	pub position: Position<Pixels<u16>>,
-	pub size: Size<Pixels<u16>>,
+	pub position: Position<Pixels<i32>>,
+	pub size: Size<Pixels<i32>>,
 	pub colour: Colour,
+	pub bounds: Option<(Position<Pixels<i32>>, Position<Pixels<i32>>)>,
+	pub id: Option<u64>,
 }
 
 impl ElementRectangle {
-	fn to_raw(&self, screen_size: Size<Pixels<f32>>) -> ElementRectangleRaw {
-		let normalised_x = self.position.x.to_screen_space(screen_size.width);
-		let normalised_y = (screen_size.height - self.position.y - self.size.height).to_screen_space(screen_size.height);
-		let normalised_width = self.size.width.to_screen_space_length(screen_size.width);
-		let normalised_height = self.size.height.to_screen_space_length(screen_size.height);
+	fn to_raw(&self, screen_size: Size<Pixels<i32>>) -> ElementRectangleRaw {
+		let mut x = self.position.x;
+		let mut y = screen_size.height - self.position.y - self.size.height;
+
+		let mut width= self.size.width;
+		let mut height= self.size.height;
+
+		if let Some((lower_left_corner, upper_right_corner)) = self.bounds {
+			if x < lower_left_corner.x {
+				let difference = lower_left_corner.x - x;
+				x = lower_left_corner.x;
+				width -= difference;
+			}
+
+			if x + width > upper_right_corner.x {
+				let difference = (x + width) - lower_left_corner.x;
+				width -= difference;
+			}
+
+			if y < lower_left_corner.y.into() {
+				let difference = lower_left_corner.y - y;
+				y = lower_left_corner.y.into();
+				height -= difference;
+			}
+
+			if y + height > upper_right_corner.y.into() {
+				let difference = (y + height) - upper_right_corner.y;
+				height -= difference;
+			}
+		}
+
+		let normalised_x = x.to_screen_space(screen_size.width);
+		let normalised_y = y.to_screen_space(screen_size.height);
+		let normalised_width = width.to_screen_space_length(screen_size.width);
+		let normalised_height = height.to_screen_space_length(screen_size.height);
 		ElementRectangleRaw { position: [normalised_x.value, normalised_y.value],
 			size: [normalised_width.value, normalised_height.value],
 			colour: self.colour.into(),
@@ -137,12 +162,12 @@ pub struct RendererState {
 
 impl RendererState {
 	pub async fn new(window: Arc<Window>) -> Result<Self, NewRendererStateError> {
-		log::info!("New RenderState constructed");
+		println!("New RenderState");
 
-		let size: Size<Pixels<u16>> = window.inner_size();
+		let size: Size<Pixels<i32>> = window.inner_size();
 
 		let element_rectangles = vec![
-			ElementRectangle { position: Position { x: 0.into(), y: 0.into() }, size: size.into(), colour: Colour::black()}
+			ElementRectangle { position: Position { x: 0.into(), y: 0.into() }, size, colour: Colour::black(), bounds: None, id: None, }
 		];
 
 		let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
@@ -192,7 +217,7 @@ impl RendererState {
 		};
 
 
-		let mut font_renderer = pollster::block_on(FontRenderer::new(Arc::clone(&(window.internal)), Arc::clone(&device), &config)).unwrap(); // NEED TO FIX THIS
+		let font_renderer = pollster::block_on(FontRenderer::new(Arc::clone(&(window.internal)), Arc::clone(&device), &config)).unwrap(); // NEED TO FIX THIS
 
 		let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
 			label: Some("Moonlight Shader"),
@@ -267,6 +292,8 @@ impl RendererState {
 			cache: None,
 		});
 
+		println!("New RenderState Created");
+
 		Ok(Self {
 			surface,
 			device,
@@ -284,8 +311,8 @@ impl RendererState {
 		})
 	}
 
-	pub fn resize(&mut self, size: Size<Pixels<f32>>) {
-		if size.width.value > 0.0 && size.height.value > 0.0 {
+	pub fn resize(&mut self, size: Size<Pixels<i32>>) {
+		if size.width.value > 0 && size.height.value > 0 {
 			self.config.width = size.width.value as u32;
 			self.config.height = size.height.value as u32;
 			self.surface.configure(&self.device, &self.config);

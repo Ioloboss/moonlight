@@ -1,27 +1,23 @@
 use mircalla_types::units::Pixels;
 use mircalla_types::vectors::{Colour, Dimension, Direction, Position, Size};
-use tapestry::font::{Font};
-use tapestry::font::font_renderer::{FontRenderer, TextBox};
 use winit::event::{ElementState, KeyEvent, MouseButton};
-use winit::event_loop::EventLoopProxy;
-use winit::keyboard::{Key, SmolStr};
 
-use crate::renderer::{ElementRectangle, RendererState};
-use crate::window::{open_window, MessageFromMainThread, Window};
+use crate::renderer::{RendererState};
+use crate::window::{open_window, Window};
 use crate::element::{Element, SizingError, Sizing};
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use std::path::Path;
-use std::{sync::{mpsc::{self, Receiver}, Arc, Mutex}, thread};
+use std::{sync::{mpsc::{self, Receiver}, Arc}, thread};
 
 pub enum InternalMessage {
 	Window(Arc<Window>),
 	Resumed,
-	Resized(Size<Pixels<u16>>),
+	Resized(Size<Pixels<i32>>),
 	RedrawRequested,
 	Close,
 	KeyPressed(KeyEvent),
-	MouseEvent(ElementState, MouseButton, Position<Pixels<u16>>),
+	MouseEvent(ElementState, MouseButton, Position<Pixels<i32>>),
+	Scroll(Pixels<i32>, Position<Pixels<i32>>),
 }
 
 trait Update<UserState, UserMessage> {
@@ -33,7 +29,7 @@ where
 	T: Fn(&mut UserState, UserMessage),
 {
 	fn update(&self, user_state: &mut UserState, user_message: UserMessage) {
-	    self(user_state, user_message)
+		self(user_state, user_message)
 	}
 }
 
@@ -84,11 +80,31 @@ where
 	}
 }
 
-pub enum UpdateResponse {
-	Nothing,
-	Recalculate,
-	Render,
-	Close,
+pub struct UpdateResponse {
+	pub reassemble: bool,
+	pub recalculate_size: bool,
+	pub recalculate_position: bool,
+	pub update_render_state: bool,
+	pub render: bool,
+	pub close: bool,
+}
+
+impl UpdateResponse {
+	pub fn close() -> UpdateResponse {
+		UpdateResponse { reassemble: false, recalculate_size: false, recalculate_position: false, update_render_state: false, render: false, close: true }
+	}
+
+	pub fn recalculate() -> UpdateResponse {
+		UpdateResponse { reassemble: true, recalculate_size: true, recalculate_position: true, update_render_state: true, render: true, close: false }
+	}
+
+	pub fn nothing() -> UpdateResponse {
+		UpdateResponse { reassemble: false, recalculate_size: false, recalculate_position: false, update_render_state: false, render: false, close: false }
+	}
+
+	pub fn reposition() -> UpdateResponse {
+		UpdateResponse { reassemble: false, recalculate_size: false, recalculate_position: true, update_render_state: true, render: true, close: false }
+	}
 }
 
 pub struct MoonlightApplication<UserState, UserMessage, Assemble, Update>
@@ -104,7 +120,7 @@ where
 	update: Update,
 	keyboard_input: Box<dyn KeyboardInputFn<UserMessage>>,
 	what: PhantomData<UserMessage>, // REMOVE THIS IF POSSIBLE
-	root: Option<Element<UserMessage>>, // MAYBE CHANGE THIS?
+	root: Element<UserMessage>, // MAYBE CHANGE THIS?
 }
 
 impl<UserState, UserMessage: Debug + Clone, Assemble: AssembleFn<UserState, UserMessage>, Update: UpdateFn<UserState, UserMessage>> MoonlightApplication<UserState, UserMessage, Assemble, Update> {
@@ -134,35 +150,51 @@ impl<UserState, UserMessage: Debug + Clone, Assemble: AssembleFn<UserState, User
 			update,
 			keyboard_input: Box::new(NoKeyboardInput),
 			what: PhantomData,
-			root: None,
+			root: Element::new(Direction::Horizontal, Size { width: Sizing::Grow { minimum: None, maximum: None }, height: Sizing::Grow { minimum: None, maximum: None } }, Colour { r: 0.0, g: 0.0, b: 0.0 }, Vec::new()),
 		}
 	}
 
-	fn recalculate(&mut self) -> Result<(), SizingError> {
-		let user_root = self.assemble.assemble(&self.user_state);
+	fn recalculate(&mut self, update_response: UpdateResponse) -> Result<(), SizingError> {
+
 		let size = self.renderer_state.window.inner_size();
-		let mut root = Element::new(Direction::Horizontal, (Sizing::Fixed(size.width), Sizing::Fixed(size.height)).into(), Colour::black(), vec![user_root]);
 
-		root.calculate_text_data();
+		if update_response.reassemble {
+			let user_root = self.assemble.assemble(&self.user_state);
+			self.root = Element::new(Direction::Horizontal, (Sizing::Fixed(size.width), Sizing::Fixed(size.height)).into(), Colour::black(), vec![user_root]);
+		}
 
-		root.calculate_fit_size(Dimension::Width);
-		root.calculate_final_size(Dimension::Width)?;
+		if update_response.recalculate_size {
+			self.root.calculate_text_data();
+
+			self.root.calculate_fit_size(Dimension::Width);
+			self.root.calculate_final_size(Dimension::Width)?;
+
+			//root.wrap_text();
+
+			self.root.calculate_fit_size(Dimension::Height);
+			self.root.calculate_final_size(Dimension::Height)?;
+		}
 
 
-		root.calculate_fit_size(Dimension::Height);
-		root.calculate_final_size(Dimension::Height)?;
 
-		root.calculate_children_position(Position {x: Some(0.into()), y: Some(0.into())});
+		if update_response.recalculate_position {
+			self.root.calculate_children_position(Position {x: Some(0.into()), y: Some(0.into())}, size);
+		}	
 
-		self.renderer_state.font_renderer.text_boxes = root.collect_text_boxes(size);
+		if update_response.update_render_state {
+			self.renderer_state.font_renderer.text_boxes = self.root.collect_text_boxes(size);
 
-		let mut element_rectangles = Vec::new();
-		root.to_rectangles(&mut element_rectangles);
-		
-		self.renderer_state.update_element_rectangles_buffer(element_rectangles);
+			let mut element_rectangles = Vec::new();
+			self.root.to_rectangles(size, &mut element_rectangles);
+			
+			self.renderer_state.update_element_rectangles_buffer(element_rectangles);
 
-		self.renderer_state.font_renderer.update();
-		self.root = Some(root);
+			self.renderer_state.font_renderer.update();
+		}
+
+		if update_response.render {
+			self.renderer_state.render().unwrap();
+		}
 
 		Ok(())
 	}
@@ -172,14 +204,15 @@ impl<UserState, UserMessage: Debug + Clone, Assemble: AssembleFn<UserState, User
 	}
 
 	pub fn run(mut self) {
+		println!("Running MoonlightApplication");
 		loop {
 			match self.reciever.recv() {
 				Ok(message) => match message {
-					InternalMessage::Window(window) => panic!("InternalMessage::Window should only be sent once."),
+					InternalMessage::Window(_window) => panic!("InternalMessage::Window should only be sent once."),
 					InternalMessage::Resumed => panic!("InternalMessage::Resumed should only be sent once."),
 					InternalMessage::Resized(size) => {
-						self.renderer_state.resize(size.into());
-						self.recalculate().unwrap();
+						self.renderer_state.resize(size);
+						self.recalculate(UpdateResponse::recalculate()).unwrap();
 						self.renderer_state.render().unwrap();
 					},
 					InternalMessage::RedrawRequested => {
@@ -188,7 +221,7 @@ impl<UserState, UserMessage: Debug + Clone, Assemble: AssembleFn<UserState, User
 							},
 							Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
 								let size = self.renderer_state.window.inner_size();
-								self.renderer_state.resize(size.into());
+								self.renderer_state.resize(size);
 							},
 							Err(e) => {
 								log::error!("Unable to render. Error: {e}");
@@ -203,20 +236,11 @@ impl<UserState, UserMessage: Debug + Clone, Assemble: AssembleFn<UserState, User
 						match self.keyboard_input.keyboard_input(key) {
 							Some(keyboard_input) => {
 								let response = self.update.update(&mut self.user_state, keyboard_input);
-								match response {
-									UpdateResponse::Nothing => {},
-									UpdateResponse::Recalculate => {
-										self.recalculate().unwrap();
-										self.renderer_state.render().unwrap();
-									},
-									UpdateResponse::Render => {
-										self.renderer_state.render().unwrap();
-										todo!("THIS IS NOT CURRENTLY SUPPORTED");
-									},
-									UpdateResponse::Close => {
-										self.close();
-										break;
-									}
+								if response.close {
+									self.close();
+									break;
+								} else {
+									self.recalculate(response).unwrap();
 								}
 							},
 							None => {},
@@ -225,32 +249,40 @@ impl<UserState, UserMessage: Debug + Clone, Assemble: AssembleFn<UserState, User
 					InternalMessage::MouseEvent(state, button, mouse_position) => {
 						match (button, state) {
 							(MouseButton::Left, ElementState::Pressed) => {
-								let user_message = match &self.root {
-									Some(root_element) => root_element.get_on_click(mouse_position),
-									None => None,
-								};
+								let user_message = self.root.get_on_click(mouse_position);
 								if let Some(user_message) = user_message {
 									let response = self.update.update(&mut self.user_state, user_message);
-									match response {
-										UpdateResponse::Nothing => {},
-										UpdateResponse::Recalculate => {
-											self.recalculate().unwrap();
-											self.renderer_state.render().unwrap();
-										},
-										UpdateResponse::Render => {
-											self.renderer_state.render().unwrap();
-											todo!("THIS IS NOT CURRENTLY SUPPORTED");
-										},
-										UpdateResponse::Close => {
-											self.close();
-											break;
-										}
+									if response.close {
+										self.close();
+										break;
+									} else {
+										self.recalculate(response).unwrap();
 									}
 								}
 							},
 							_ => {},
 						}
 					},
+					InternalMessage::Scroll(distance, mouse_position) => {
+						let user_message = {
+							let on_scroll = self.root.get_on_scroll(mouse_position);
+							match on_scroll {
+								Some(on_scroll) => {
+									on_scroll.on_scroll(distance)
+								},
+								None => None,
+							}
+						};
+						if let Some(user_message) = user_message {
+							let response = self.update.update(&mut self.user_state, user_message);
+							if response.close {
+								self.close();
+								break;
+							} else {
+								self.recalculate(response).unwrap();
+							}
+						}
+					}
 					_ => todo!("MoonlightApplication::Run reached InternalMessage not implemented yet.")
 				},
 				Err(e) => panic!("Error when running MoonlightApplication: {e}"),
