@@ -17,7 +17,12 @@ pub enum InternalMessage {
 	Close,
 	KeyPressed(KeyEvent),
 	MouseEvent(ElementState, MouseButton, Position<Pixels<i32>>),
-	Scroll(Pixels<i32>, Position<Pixels<i32>>),
+	Scroll(Pixels<i32>, Position<Pixels<i32>>, ScrollType),
+}
+
+pub enum ScrollType {
+	Pixel,
+	Line,
 }
 
 trait Update<UserState, UserMessage> {
@@ -121,6 +126,7 @@ where
 	keyboard_input: Box<dyn KeyboardInputFn<UserMessage>>,
 	what: PhantomData<UserMessage>, // REMOVE THIS IF POSSIBLE
 	root: Element<UserMessage>, // MAYBE CHANGE THIS?
+	line_scroll_distance: Pixels<i32>,
 }
 
 impl<UserState, UserMessage: Debug + Clone, Assemble: AssembleFn<UserState, UserMessage>, Update: UpdateFn<UserState, UserMessage>> MoonlightApplication<UserState, UserMessage, Assemble, Update> {
@@ -151,6 +157,7 @@ impl<UserState, UserMessage: Debug + Clone, Assemble: AssembleFn<UserState, User
 			keyboard_input: Box::new(NoKeyboardInput),
 			what: PhantomData,
 			root: Element::new(Direction::Horizontal, Size { width: Sizing::Grow { minimum: None, maximum: None }, height: Sizing::Grow { minimum: None, maximum: None } }, Colour { r: 0.0, g: 0.0, b: 0.0 }, Vec::new()),
+			line_scroll_distance: 20.into(),
 		}
 	}
 
@@ -263,12 +270,17 @@ impl<UserState, UserMessage: Debug + Clone, Assemble: AssembleFn<UserState, User
 							_ => {},
 						}
 					},
-					InternalMessage::Scroll(distance, mouse_position) => {
+					InternalMessage::Scroll(distance, mouse_position, scroll_type) => {
 						let user_message = {
 							let on_scroll = self.root.get_on_scroll(mouse_position);
 							match on_scroll {
 								Some(on_scroll) => {
-									on_scroll.on_scroll(distance)
+									on_scroll.on_scroll(
+										match scroll_type {
+											ScrollType::Line => distance * self.line_scroll_distance,
+											ScrollType::Pixel => distance,
+										}
+									)
 								},
 								None => None,
 							}
@@ -292,5 +304,13 @@ impl<UserState, UserMessage: Debug + Clone, Assemble: AssembleFn<UserState, User
 
 	pub fn set_keyboard_input<NewKeyboardInput: KeyboardInputFn<UserMessage> + 'static>(&mut self, keyboard_input: NewKeyboardInput) {
 		self.keyboard_input = Box::new(keyboard_input);
+	}
+
+	pub fn set_line_scroll_distance(&mut self, scroll_distance: Pixels<i32>) {
+		self.line_scroll_distance = scroll_distance;
+	}
+
+	pub fn set_title(&self, title: &str) {
+		self.renderer_state.window.set_title(title);
 	}
 }

@@ -1,6 +1,6 @@
 use std::sync::{Arc, mpsc};
 
-use crate::internal_loop::{InternalMessage};
+use crate::internal_loop::{InternalMessage, ScrollType};
 use mircalla_types::units::Pixels;
 use mircalla_types::vectors::{Position, Size};
 use tapestry::font::ToPixelsSize;
@@ -30,6 +30,10 @@ impl Window {
 	pub fn close(&self) {
 		self.event_loop_proxy.send_event(MessageFromMainThread::Close).unwrap();
 	}
+
+	pub fn set_title(&self, title: &str) {
+		self.internal.set_title(title);
+	} 
 }
 
 impl HasWindowHandle for Window{
@@ -68,7 +72,7 @@ impl App {
 impl ApplicationHandler<MessageFromMainThread> for App {
 	fn resumed(&mut self, event_loop: &ActiveEventLoop) {
 		let window_attributes = winit::window::Window::default_attributes()
-			.with_title("Moonlight Test"); // CHANGE TO RECIEVED FROM APPLICATION
+			.with_title("Moonlight Application"); // CHANGE TO RECIEVED FROM APPLICATION
 
 		let window = Arc::new(Window{ 
 			internal: Arc::new(event_loop.create_window(window_attributes).unwrap()),
@@ -102,14 +106,15 @@ impl ApplicationHandler<MessageFromMainThread> for App {
 				self.mouse_position = (position.x as i32, position.y as i32).into()
 			},
 			WindowEvent::MouseWheel { device_id, delta, phase } => {
-				let distance = match delta {
-					MouseScrollDelta::LineDelta(horizontal, vertical) => todo!("Line Scrolling Not Implemented"),
+				let (distance, scroll_type) = match delta {
+					MouseScrollDelta::LineDelta(horizontal, vertical) => {
+						((vertical as i32).into(), ScrollType::Line)
+					},
 					MouseScrollDelta::PixelDelta(PhysicalPosition {x, y}) => {
-						//println!("Scrolling {y}, with phase {phase:?}"); // Potentially Batch Scroll Messages.
-						(y as i32).into()
+						((y as i32).into(), ScrollType::Pixel)
 					}
 				};
-				self.transmitter.send(InternalMessage::Scroll(distance, self.mouse_position)).unwrap();
+				self.transmitter.send(InternalMessage::Scroll(distance, self.mouse_position, scroll_type)).unwrap();
 			}
 			_ => {},
 		}

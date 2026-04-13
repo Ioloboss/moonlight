@@ -121,7 +121,7 @@ fn update(user_state: &mut UserStateTest, user_message: UserMessageTest) -> Upda
 
 fn main() {
 	// let font_filename = Path::new("../tapestry/resources/fonts/Geist_Mono/static/GeistMono-Regular.ttf");
-	let font_filename = Path::new("../tapestry/resources/fonts/NotoJP/static/NotoSansJP-Regular.ttf");
+	let font_filename = Path::new("../tapestry/resources/fonts/Noto_Sans_JP/static/NotoSansJP-Regular.ttf");
 
 	let font = Arc::new(Font::new(font_filename));
 
@@ -130,6 +130,7 @@ fn main() {
 	let mut application = MoonlightApplication::new(state, assemble, update);
 
 	application.set_keyboard_input(from_keyboard_input);
+	application.set_title("Moonlight Test");
 
 	application.run();
 }
