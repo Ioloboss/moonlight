@@ -205,9 +205,10 @@ impl<UserMessage: Clone> Element<UserMessage> {
 					position: ((self.position.x.unwrap() + self.indentation.left), ((screen_size.height - self.position.y.unwrap() - self.text.as_ref().map(|text_box| text_box.get_height_offset()).unwrap() - self.indentation.bottom) + text.font.typographic_descender.to_pixels_rounded(text.get_pixels_per_font_unit()))).into(),
 					text_box_size: (self.assigned_size.width.unwrap() - self.indentation.left - self.indentation.right, self.assigned_size.height.unwrap() - self.indentation.top - self.indentation.bottom).into(),
 					bounds,
-					colour: text.colour,
 					wrap_options: text.wrap_options,
 					alignment: text.alignment,
+					cursor_position: text.cursor_position,
+					cursor_colour: text.cursor_colour,
 				};
 				text_boxes.push(text_box);
 			},

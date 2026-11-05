@@ -284,7 +284,7 @@ impl RendererState {
 			},
 			depth_stencil: None,
 			multisample: wgpu::MultisampleState {
-				count: 1,
+				count: 4,
 				mask: !0,
 				alpha_to_coverage_enabled: false,
 			},
@@ -339,11 +339,28 @@ impl RendererState {
 		}
 
 		let output = self.surface.get_current_texture()?;
+		let format = output.texture.format();
 
 		let view = output.texture.create_view(&wgpu::TextureViewDescriptor {
 			label: Some("Moonlight TextureView"),
+			format: Some(format),
 			..Default::default()
 		});
+
+		let size = self.window.inner_size();
+
+		let multisample_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+			label: Some("Mutltisample texture"),
+			size: wgpu::Extent3d{ width: size.width.value as u32, height: size.height.value as u32, depth_or_array_layers: 1},
+			sample_count: 4,
+			dimension: wgpu::TextureDimension::D2,
+			usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+			mip_level_count: 1,
+			format: format,
+			view_formats: &[],
+		});
+
+		let multisample_view = multisample_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
 		// println!("\nMoonlight TextureView: {view:?}");
 
@@ -356,8 +373,8 @@ impl RendererState {
 				label: Some("Render Pass"),
 				color_attachments: &[
 					Some(wgpu::RenderPassColorAttachment {
-						view: &view,
-						resolve_target: None,
+						view: &multisample_view,
+						resolve_target: Some(&view),
 						ops: wgpu::Operations {
 							load: wgpu::LoadOp::Clear(
 								wgpu::Color {
@@ -386,7 +403,7 @@ impl RendererState {
 
 		self.queue.submit(std::iter::once(encoder.finish()));
 
-		self.font_renderer.draw_text(&self.queue, &view);
+		self.font_renderer.draw_text(&self.queue, &view, &multisample_view);
 
 		self.window.pre_present_notify();
 		output.present();
